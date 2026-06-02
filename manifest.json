@@ -1,0 +1,21 @@
+{
+  "name": "Metrofresh Operations",
+  "short_name": "Metrofresh",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f0f4f9",
+  "theme_color": "#1a73e8",
+  "description": "Metrofresh Supermarket ERP & Operations",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

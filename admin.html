@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <title>Admin - Metrofresh</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #f0f4f9; --primary: #1a73e8; --primary-light: #d3e3fd; 
+            --surface: #ffffff; --text-main: #1f1f1f; --text-muted: #5f6368; --border: #dadce0;
+            --success: #146c2e; --danger: #b3261e; --warning: #b36b00;
+            --grad-green: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+            --grad-orange: linear-gradient(135deg, #fef7e0 0%, #fce8e6 100%);
+            --grad-red: linear-gradient(135deg, #fce8e6 0%, #fad2cf 100%);
+            --app-max-width: 480px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: #e3e5e8; display: flex; justify-content: center; min-height: 100vh; overflow: hidden; color: var(--text-main); }
+        .app-shell { width: 100%; max-width: var(--app-max-width); background: var(--bg-base); position: relative; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; z-index: 1; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        .hidden { display: none !important; }
+
+        .app-header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+        .app-header h1 { font-size: 15px; font-weight: 800; color: var(--text-main); margin: 0; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .header-icons { display: flex; gap: 8px; align-items: center; }
+        .header-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--primary); background: var(--primary-light); position: relative; transition: 0.2s; }
+        .header-icon svg { width: 18px; height: 18px; fill: currentColor; }
+        .header-icon:active { transform: scale(0.95); }
+        .admin-date-input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+        .main-content { flex: 1; overflow-y: auto; padding-bottom: 100px; position: relative; }
+        
+        .tab-section { display: none; padding: 16px; }
+        .tab-section.active { display: block; animation: fadeUp 0.3s ease; }
+        @keyframes fadeUp { from{opacity:0; transform:translateY(10px)} to {opacity:1; transform:translateY(0)} }
+
+        .card { background: var(--surface); border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        
+        .kpi-grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+        #cat-page-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .cat-po-card { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; cursor: pointer; padding: 16px; }
+        .cat-po-card:active { transform: scale(0.98); }
+        .kpi-box { padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+        .kpi-label { font-size: 10px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+        .kpi-val { font-size: 18px; font-weight: 800; color: var(--text-main); }
+
+        .cat-tile { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-radius: 12px; margin-bottom: 10px; cursor: pointer; border: 1px solid rgba(0,0,0,0.05); transition: 0.2s; }
+        .cat-tile:active { transform: scale(0.98); }
+        .cat-name { font-size: 14px; font-weight: 800; color: var(--text-main); }
+        .cat-meta { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-top: 4px; }
+        .cat-amt { font-size: 16px; font-weight: 800; color: var(--text-main); text-align: right; }
+        
+        .grad-green { background: var(--grad-green); }
+        .grad-orange { background: var(--grad-orange); }
+        .grad-red { background: var(--grad-red); }
+
+        .settings-group { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; color: var(--text-main); }
+        .settings-item:hover { background: #f8f9fa; }
+        .settings-item:last-child { border-bottom: none; }
+        .settings-item-left { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 700; color: var(--text-main); }
+        .settings-icon-bg { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .settings-arrow { color: #bdc1c6; font-size: 20px; font-weight: 500; line-height: 1; margin-top: -2px; }
+
+        .checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; max-height: 180px; overflow-y: auto; }
+        .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text-main); cursor: pointer; padding: 4px 0; }
+        .checkbox-item input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border: 2px solid var(--text-muted); border-radius: 4px; cursor: pointer; position: relative; transition: 0.2s; flex-shrink: 0; background: var(--surface-solid); }
+        .checkbox-item input[type="checkbox"]:checked { background-color: var(--primary); border-color: var(--primary); }
+        .checkbox-item input[type="checkbox"]:checked::after { content: '✔'; color: white; font-size: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+        /* Admin User Cards Mobile */
+        .user-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        .uc-top { display: flex; justify-content: space-between; align-items: center; }
+        .uc-name { font-weight: 800; font-size: 15px; color: var(--primary); text-transform: uppercase; }
+        .uc-role { font-size: 10px; font-weight: 800; background: var(--primary-light); color: var(--primary); padding: 4px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .uc-branches { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+        .uc-actions { display: flex; gap: 8px; }
+        .uc-actions .btn { flex: 1; padding: 8px; min-height: 36px; font-size: 13px; margin: 0; }
+
+        .input-modern { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: #f8f9fa; outline: none; margin-bottom: 12px; transition: 0.2s;}
+        .input-modern:focus { border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px var(--primary-glow); }
+        
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 50px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s;}
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: var(--surface); border: 1px solid var(--border); color: var(--text-main); }
+        .btn-danger { background: #fce8e6; color: var(--danger); border: 1px solid #fad2cf; }
+
+        /* Floating Nav (Compact Mobile) */
+        .floating-nav { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: max-content; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border-radius: 50px; display: flex; padding: 4px; gap: 2px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); border: 1px solid var(--border); z-index: 100; transition: 0.3s; }
+        .floating-nav.hidden-down { transform: translate(-50%, 150px); opacity: 0; }
+        .nav-item { display: flex; align-items: center; justify-content: center; padding: 8px 10px; border-radius: 50px; color: var(--text-muted); cursor: pointer; transition: 0.3s; }
+        .nav-item svg { width: 18px; height: 18px; fill: currentColor; }
+        .nav-item span { font-size: 11px; font-weight: 700; max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap; transition: 0.3s; }
+        .nav-item.active { background: var(--primary-light); color: var(--primary); padding: 8px 12px; }
+        .nav-item.active span { max-width: 60px; opacity: 1; margin-left: 4px; }
+        .collapse-btn { padding: 8px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; margin-left: 2px; }
+        .collapse-btn svg { width: 16px; height: 16px; fill: currentColor; }
+        .show-nav-btn { position: absolute; bottom: 16px; right: 16px; width: 44px; height: 44px; background: var(--surface); border-radius: 50%; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; z-index: 99; cursor: pointer; color: var(--primary); transition: 0.3s; }
+        .show-nav-btn.hidden-down { transform: translateY(150px); opacity: 0; pointer-events: none; }
+        .desktop-nav-logout { display: none; }
+
+        .floating-nav.nav-disabled { pointer-events: none; background: linear-gradient(90deg, #0e1b2b, #1b2e45); box-shadow: inset 0 4px 15px rgba(0,0,0,0.3); transition: 0.3s; border: none; }
+        .floating-nav.nav-disabled .nav-item { color: rgba(176, 196, 222, 0.4); }
+        .floating-nav.nav-disabled .nav-item.active { background: transparent; border-bottom-color: rgba(102, 163, 255, 0.2); color: rgba(255,255,255,0.6); }
+        .floating-nav.nav-disabled .desktop-nav-logout { color: rgba(255, 179, 179, 0.4); }
+
+        /* Overlays */
+        .page-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-base); z-index: 20; display: flex; flex-direction: column; transform: translateX(100%); transition: 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .page-overlay.active { transform: translateX(0); }
+        .page-header { padding: 12px 16px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 5; }
+        .page-body { padding: 16px; overflow-y: auto; flex: 1; padding-bottom: 100px; }
+
+        .sheet-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; opacity: 0; pointer-events: none; transition: 0.2s; display: flex; justify-content: center; align-items: center; }
+        .sheet-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-box { background: var(--surface); width: 90%; max-width: 320px; margin: auto; border-radius: 16px; padding: 20px; transform: scale(0.95); transition: 0.2s; }
+        .sheet-overlay.active .modal-box { transform: scale(1); }
+
+        /* Dashboard Mobile Flex Layout */
+        .dash-wrapper { display: flex; flex-direction: column; gap: 16px; }
+        .dash-left { display: contents; } 
+        .kpi-grid-4 { order: 1; }
+        .dash-right { order: 2; }
+        .dashboard-grid { order: 3; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+        
+        .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); height: 240px; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; }
+        .chart-card:active { transform: scale(0.98); }
+        .chart-title { font-size: 11px; font-weight: 800; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chart-container { flex: 1; position: relative; min-height: 0; width: 100%; }
+
+        /* Tables & Analytics Report */
+        .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); margin-bottom: 16px; }
+        .styled-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
+        .styled-table th, .styled-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 12px; }
+        .styled-table th { background: #f8f9fa; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+        .styled-table th:first-child, .styled-table td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; border-right: 1px solid var(--border); max-width: 140px; white-space: normal; }
+        .styled-table th:first-child { z-index: 3; background: #f8f9fa; }
+        
+        .report-table-wrapper { width: 100%; overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
+        .report-table { width: 100%; border-collapse: collapse; text-align: left; }
+        .report-table th { background: #f8f9fa; color: var(--text-muted); padding: 10px 16px; font-size: 11px; font-weight: 800; text-transform: uppercase; border-bottom: 2px solid var(--border); letter-spacing: 0.5px; white-space: nowrap; cursor: pointer; transition: background 0.2s; user-select: none; }
+        .report-table th:hover { background: #e8eaed; }
+        .sort-icon { display: inline-block; margin-left: 6px; font-size: 12px; color: var(--primary); }
+        .report-table td { padding: 10px 16px; border-bottom: 1px solid #e8eaed; font-size: 13px; color: var(--text-main); white-space: nowrap; }
+        .report-table tbody tr:nth-child(even) { background-color: #fbfbfc; }
+        .report-total-row td { font-weight: 800; color: #1f1f1f; background: #f8f9fa; border-top: 2px solid #bdc1c6; border-bottom: none; }
+
+        .upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 2px dashed var(--primary); border-radius: 12px; padding: 20px; cursor: pointer; background: var(--primary-light); margin-bottom: 4px; transition: 0.2s; text-align: center; }
+        .upload-zone:active { transform: scale(0.98); }
+        .upload-zone svg { width: 24px; height: 24px; fill: var(--primary); }
+        .upload-text { font-size: 13px; font-weight: 800; color: var(--primary); }
+        .db-count { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; margin-bottom: 16px; }
+        
+        #login-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-base); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .desktop-only { display: none; }
+        .desktop-system-footer { display: none; }
+
+        /* =========================================
+           DESKTOP ERP MODE (Oracle NetSuite Style)
+           ========================================= */
+        @media (min-width: 1024px) {
+            body { background-color: #f1f3f4; }
+            .app-shell { max-width: 100%; border-radius: 0; box-shadow: none; flex-direction: column; }
+            
+            /* 1. Ultra Thin Header (40px, White) */
+            .app-header { order: 1; background: #ffffff; border-bottom: 1px solid #dadce0; padding: 0 32px; height: 40px; }
+            .app-header h1 { color: #1f1f1f; font-size: 15px; letter-spacing: 0.2px; }
+            .header-icon { background: transparent; color: #5f6368; width: 28px; height: 28px; }
+            .header-icon:hover { background: #f1f3f4; }
+            
+            #icon-calendar { width: auto; background: transparent; }
+            .mobile-only-svg { display: none; }
+            .admin-date-input { position: static; opacity: 1; width: 130px; height: 26px; border: 1px solid #dadce0; border-radius: 4px; padding: 0 8px; font-family: inherit; font-size: 12px; cursor: pointer; color: var(--text-main); }
+            
+            /* 2. Thin Tab Strip (36px, Dark Blue) */
+            .floating-nav { 
+                order: 2; position: static; transform: none; width: 100%; 
+                background: #003366; border-radius: 0; border-bottom: none; 
+                padding: 0 24px; box-shadow: none; justify-content: flex-start; height: 36px; gap: 0;
+                transition: opacity 0.2s;
+            }
+            .floating-nav.hidden-down { transform: none; opacity: 1; }
+            .collapse-btn, .show-nav-btn { display: none !important; }
+            .nav-item { border-radius: 0; border-bottom: 3px solid transparent; padding: 0 16px; margin-right: 4px; color: #b0c4de; }
+            .nav-item svg { display: none; } 
+            .nav-item:hover { background: rgba(255,255,255,0.1); color: #ffffff; }
+            .nav-item.active { background: rgba(255,255,255,0.2); color: #ffffff; border-bottom-color: #66a3ff; font-weight: 800; }
+            .nav-item span { max-width: none; opacity: 1; margin-left: 0; font-size: 12px; }
+            .desktop-nav-logout { display: flex; margin-left: auto; align-items: center; color: #ffb3b3; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 16px; transition: background 0.2s; }
+            .desktop-nav-logout:hover { background: rgba(255,0,0,0.1); color: #ffcccc; }
+
+            /* 3. Main Content Wrapper */
+            .main-content { order: 3; padding: 20px 24px; padding-bottom: 24px; background: #f8f9fa; display: flex; flex-direction: column; overflow: hidden; }
+            
+            .tab-section { max-width: 1600px; width: 100%; margin: 0 auto; flex: 1; padding: 0; display: none; }
+            
+            /* Strict overflow hidden to enforce perfect fit */
+            .tab-section#tab-dashboard.active, .tab-section#tab-purchase.active { display: flex; flex-direction: column; overflow: hidden; }
+            
+            /* 4. Desktop Dashboard Perfect Fit (75/25 Split) */
+            .dash-wrapper { display: grid; grid-template-columns: 3fr 1fr; gap: 16px; flex: 1; min-height: 0; min-width: 0; width: 100%; }
+            .dash-left { display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; }
+            .dash-right { order: unset; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow: hidden; }
+            
+            /* High padded KPIs */
+            .kpi-grid-4 { order: unset; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 0; flex-shrink: 0; min-width: 0; }
+            .kpi-box { border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .kpi-label { font-size: 11px; margin-bottom: 6px; }
+            .kpi-val { font-size: 20px; }
+            
+            /* 3x2 Chart Grid */
+            .dashboard-grid { order: unset; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 12px; flex: 1; min-height: 0; min-width: 0; margin-bottom: 0; padding: 4px; margin: -4px; }
+            .chart-card { height: auto; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+            .chart-card:active { transform: none; }
+            .chart-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.1); border-color: var(--primary); position: relative; z-index: 10; }
+            .chart-title { font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+            
+            /* Compact Categories on Right */
+            .cat-list-wrapper { overflow-y: auto; flex: 1; padding-right: 4px; }
+            #po-category-list, #rcvd-category-list { display: flex; flex-direction: column; gap: 6px; }
+            .cat-tile { margin-bottom: 0; border-radius: 6px; padding: 10px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+            .cat-name { font-size: 12px; } .cat-amt { font-size: 14px; } .cat-meta { font-size: 10px; margin-top:2px;}
+            
+            /* 5. Settings Pages Grid (Allows Scroll) */
+            .tab-section#tab-settings.active, .tab-section#tab-shelf.active, .tab-section#tab-sales.active { display: block; overflow-y: auto; padding-right: 8px; }
+            .tab-section#tab-settings.active { display: grid !important; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+            .settings-group { border-radius: 8px; margin-bottom: 0; }
+
+            /* 6. Overlays Professional Full Screen */
+            .page-overlay { 
+                top: 76px !important; 
+                height: calc(100vh - 76px - 24px) !important; /* -24px for footer */
+                width: 100%; border-left: none; box-shadow: none; 
+                background: #f1f3f4; z-index: 15; overflow-y: auto; 
+                padding: 32px; 
+            }
+            .page-body, .page-header { max-width: 100%; width: 100%; }
+            .page-header { background: transparent; border-bottom: none; margin: 0 0 24px 0; padding: 0; position: static; }
+            .page-body { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex: unset; overflow: visible; }
+            
+            #cat-page-kpis { display: flex; gap: 16px; margin-bottom: 24px; }
+            #cat-page-kpis .kpi-box { flex: 1; }
+            #cat-po-list .cat-po-card { grid-template-columns: 2fr 1fr 2fr auto; gap: 16px; }
+            #cat-po-list .cat-po-card > div:nth-child(2) { text-align: left !important; }
+
+            
+
+            /* Redesign overlay card lists to professional wide rows */
+            #admin-user-list, #cat-po-list { 
+                background: #ffffff; 
+                border: 1px solid var(--border); 
+                border-radius: 8px; 
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
+                overflow: hidden; 
+            }
+            
+            #cat-po-list .cat-po-card, #analytics-po-list-container .cat-po-card { 
+                display: grid; 
+                grid-template-columns: 2fr 1.5fr 2fr auto; 
+                gap: 16px; 
+                align-items: center; 
+                padding: 16px 24px; 
+                box-shadow: none; 
+                border-bottom: 1px solid var(--border); 
+                border-radius: 0; 
+                margin: 0; 
+                background: transparent;
+            }
+            #cat-po-list .cat-po-card:last-child, #analytics-po-list-container .cat-po-card:last-child { border-bottom: none; }
+            #cat-po-list .cat-po-card > div:nth-child(2), #analytics-po-list-container .cat-po-card > div:nth-child(2) { text-align: left !important; }
+
+            #admin-user-list .user-card { 
+                display: grid; 
+                grid-template-columns: 2fr 3fr auto; 
+                gap: 24px; 
+                align-items: center; 
+                padding: 16px 24px; 
+                box-shadow: none; 
+                border-bottom: 1px solid var(--border); 
+                border-radius: 0; 
+                margin: 0; 
+                background: transparent;
+            }
+            #admin-user-list .user-card:last-child { border-bottom: none; }
+            #admin-user-list .uc-top { display: flex; align-items: center; justify-content: flex-start; gap: 12px; }
+            #admin-user-list .uc-role { justify-self: start; width: max-content; }
+            #admin-user-list .uc-actions { width: auto; display: flex; gap: 8px; }
+            #admin-user-list .uc-actions .btn { width: 80px; }
+            
+            /* 7. Desktop Footer Strip (24px) */
+            .desktop-system-footer { display: flex; justify-content: space-between; align-items: center; position: fixed; bottom: 0; width: 100%; height: 24px; background: #e8eaed; border-top: 1px solid #d0d0d0; padding: 0 32px; font-size: 10px; font-weight: 600; color: var(--text-muted); z-index: 50; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-shell">
+    <div id="login-screen">
+        <h1 style="color:var(--primary); font-size:24px; font-weight:800; margin-bottom:8px;">METROFRESH</h1>
+        <p style="color:var(--text-muted); font-size:14px; margin-bottom:30px; font-weight:600;">Admin Authentication</p>
+        <div class="card" style="width:100%; max-width:340px; padding:24px;">
+            <label style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; display:block;">Email</label>
+            <input type="email" id="login-email" class="input-modern" placeholder="admin@metrofresh.com">
+            <label style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; display:block;">Password</label>
+            <input type="password" id="login-pass" class="input-modern" placeholder="••••••••">
+            <button class="btn btn-primary" style="margin-top:10px;" onclick="handleLogin(this)">Secure Login</button>
+        </div>
+    </div>
+
+    <div id="main-app" class="hidden" style="height:100%; display:flex; flex-direction:column;">
+        <header class="app-header">
+            <h1 id="app-title">Dashboard - Iritty</h1>
+            <div class="header-icons">
+                <div class="header-icon" id="icon-branch" title="Switch Branch" onclick="cycleBranch()">
+                    <svg viewBox="0 0 24 24"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg>
+                </div>
+                <div class="header-icon" id="icon-calendar" title="Select Date Range" onclick="openDateRangeModal()">
+                    <svg viewBox="0 0 24 24" style="display:block;"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7v-5z"/></svg>
+                </div>
+                <div class="header-icon" title="Profile & Settings" onclick="openProfilePage()">
+                    <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Strip -->
+        <nav class="floating-nav" id="main-nav">
+            <div class="nav-item active" onclick="switchTab('tab-dashboard', 'PO Dashboard', this)">
+                <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                <span>POs</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('tab-purchase', 'Received Purchases', this)">
+                <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                <span>Rcvd</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('tab-shelf', 'Shelf Rentals', this)">
+                <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4zM2 4v16h20V4H2z" opacity="0.2"/><path d="M3 3v18h18V3H3zm15 14H6v-2h12v2zm0-5H6v-2h12v2zm0-5H6V5h12v2z"/></svg>
+                <span>Shelf</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('tab-sales', 'Live Sales', this)">
+                <svg viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
+                <span>Sales</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('tab-settings', 'Configuration', this)">
+                <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35C8.66 5.59 8.12 5.92 7.63 6.29L5.24 5.33a.488.488 0 00-.59.22L2.73 8.87a.49.49 0 00.12.61l2.03 1.58c-.04.3-.06.61-.06.94s.02.64.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                <span>Setup</span>
+            </div>
+            <div class="collapse-btn" onclick="toggleNav()"><svg id="nav-arrow" viewBox="0 0 24 24"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></svg></div>
+            <div class="desktop-nav-logout" onclick="logoutAdmin()">Sign Out →</div>
+        </nav>
+        <div class="show-nav-btn hidden-down" id="show-nav-btn" onclick="toggleNav()"><svg viewBox="0 0 24 24" style="width:24px; fill:currentColor;"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></svg></div>
+
+        <main class="main-content">
+            <!-- DASHBOARD TAB -->
+            <div id="tab-dashboard" class="tab-section active">
+                <div class="dash-wrapper">
+                    <div class="dash-left">
+                        <div class="kpi-grid-4">
+                            <div class="kpi-box"><div class="kpi-label">Total Amount</div><div class="kpi-val" id="kpi-po-amt" style="color:var(--primary);">₹0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Total PO's</div><div class="kpi-val" id="kpi-po-cnt">0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Avg Order Value</div><div class="kpi-val" id="kpi-po-avg">₹0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Active Categories</div><div class="kpi-val" id="kpi-po-cats">0</div></div>
+                        </div>
+
+                        <div class="dashboard-grid">
+                            <div class="chart-card" onclick="openAnalytics('poVolume', 'Purchase Volume by Category')">
+                                <div class="chart-title">Purchase Volume by Category (₹)</div>
+                                <div class="chart-container"><canvas id="poDesktopChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('poAgeing', 'PO Ageing (Unreceived Value)')">
+                                <div class="chart-title">PO Ageing (Unreceived ₹)</div>
+                                <div class="chart-container"><canvas id="poAgeingChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('poTrend', 'Daily PO Trend (Count)')">
+                                <div class="chart-title">Daily PO Trend (Count)</div>
+                                <div class="chart-container"><canvas id="poLineChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('poSup', 'Top Suppliers by Volume')">
+                                <div class="chart-title">Top Suppliers (Volume)</div>
+                                <div class="chart-container"><canvas id="poSupplierChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('poBrand', 'Brand Value Distribution')">
+                                <div class="chart-title">Brand Distribution (₹)</div>
+                                <div class="chart-container"><canvas id="poBrandChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('poDailyVal', 'Daily Order Value Trend')">
+                                <div class="chart-title">Daily Order Value Trend</div>
+                                <div class="chart-container"><canvas id="poDailyValChart"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dash-right">
+                        <h3 style="font-size:12px; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Category Breakdown</h3>
+                        <div id="po-category-list" class="cat-list-wrapper"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PURCHASE RECEIVED TAB -->
+            <div id="tab-purchase" class="tab-section">
+                <div class="dash-wrapper">
+                    <div class="dash-left">
+                        <div class="kpi-grid-4">
+                            <div class="kpi-box"><div class="kpi-label">Est. Amount</div><div class="kpi-val" id="kpi-rcvd-po">₹0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Rcvd Amount</div><div class="kpi-val" id="kpi-rcvd-act" style="color:var(--success);">₹0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Variance</div><div class="kpi-val" id="kpi-rcvd-var">₹0</div></div>
+                            <div class="kpi-box"><div class="kpi-label">Total Receipts</div><div class="kpi-val" id="kpi-rcvd-cnt">0</div></div>
+                        </div>
+
+                        <div class="dashboard-grid">
+                            <div class="chart-card" onclick="openAnalytics('rcvdVolume', 'Receipts Value by Category')">
+                                <div class="chart-title">Receipts Value by Category (₹)</div>
+                                <div class="chart-container"><canvas id="rcvdDesktopChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('rcvdVar', 'Est vs Actual Performance')">
+                                <div class="chart-title">Est vs Actual Performance</div>
+                                <div class="chart-container"><canvas id="rcvdVarianceChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('rcvdTrend', 'Daily Receipt Value Trend')">
+                                <div class="chart-title">Daily Receipt Trend (Value)</div>
+                                <div class="chart-container"><canvas id="rcvdLineChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('rcvdSup', 'Top Variances by Supplier')">
+                                <div class="chart-title">Top Variances by Supplier</div>
+                                <div class="chart-container"><canvas id="rcvdSupplierChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('rcvdVarTrend', 'Variance Trend')">
+                                <div class="chart-title">Variance Trend</div>
+                                <div class="chart-container"><canvas id="rcvdVarTrendChart"></canvas></div>
+                            </div>
+                            <div class="chart-card" onclick="openAnalytics('rcvdBrand', 'Brand Receipts Value')">
+                                <div class="chart-title">Received Brands (₹)</div>
+                                <div class="chart-container"><canvas id="rcvdBrandChart"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dash-right">
+                        <h3 style="font-size:12px; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Category Breakdown</h3>
+                        <div id="rcvd-category-list" class="cat-list-wrapper"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DUMMY TABS -->
+            <div id="tab-shelf" class="tab-section"><div class="card" style="text-align:center; padding:40px 16px;"><h2 style="font-size:18px;">Shelf Rentals</h2><p style="font-size:12px; color:var(--text-muted);">Coming Soon</p></div></div>
+            <div id="tab-sales" class="tab-section"><div class="card" style="text-align:center; padding:40px 16px;"><h2 style="font-size:18px;">Sales Analytics</h2><p style="font-size:12px; color:var(--text-muted);">Coming Soon</p></div></div>
+
+            <!-- SETTINGS TAB -->
+            <div id="tab-settings" class="tab-section">
+                <div>
+                    <h3 style="font-size:12px; font-weight:700; color:var(--text-muted); margin:0 0 8px 12px; text-transform:uppercase; letter-spacing:0.5px;">User Management</h3>
+                    <div class="settings-group">
+                        <div class="settings-item" onclick="openCreateUser()">
+                            <div class="settings-item-left"><div class="settings-icon-bg" style="background:#e8f0fe; color:#1a73e8;">👤</div> Create Staff User</div>
+                            <div class="settings-arrow">›</div>
+                        </div>
+                        <div class="settings-item" onclick="openSettingPage('page-manage-users')">
+                            <div class="settings-item-left"><div class="settings-icon-bg" style="background:#e6f4ea; color:#1e8e3e;">👥</div> Manage Users</div>
+                            <div class="settings-arrow">›</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="font-size:12px; font-weight:700; color:var(--text-muted); margin:0 0 8px 12px; text-transform:uppercase; letter-spacing:0.5px;">Data & ERP Settings</h3>
+                    <div class="settings-group">
+                        <div class="settings-item" onclick="openSettingPage('page-sync-data')">
+                            <div class="settings-item-left"><div class="settings-icon-bg" style="background:#fce8e6; color:#d93025;">🔄</div> ERP Data Sync</div>
+                            <div class="settings-arrow">›</div>
+                        </div>
+                        <div class="settings-item" onclick="openSettingPage('page-add-vendor')">
+                            <div class="settings-item-left"><div class="settings-icon-bg" style="background:#fef7e0; color:#b36b00;">🏢</div> Add Manual Vendor</div>
+                            <div class="settings-arrow">›</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div class="desktop-system-footer desktop-only">
+            <div>Metrofresh ERP Administrator View</div>
+            <div>Database: Connected (Supabase) • Sync: Active</div>
+        </div>
+
+        <!-- ANALYTICS DETAIL PAGE (Overlay Table) -->
+        <div id="view-analytics-details" class="page-overlay">
+            <div class="page-header" style="justify-content: flex-start;">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('view-analytics-details')">← Back</button>
+                <h2 id="analytics-title" style="font-size:15px; font-weight:800; color:var(--text-main); margin:0; margin-left:12px; line-height:1.2;">Analytics Report</h2>
+            </div>
+            <div class="page-body">
+                <div id="analytics-table-container"></div>
+            </div>
+        </div>
+
+        <!-- PROFILE SETTINGS PAGE (Overlay) -->
+        <div id="view-profile-page" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('view-profile-page')">← Back</button>
+            </div>
+            <div class="page-body">
+                <div style="text-align:center; padding:10px 0;">
+                    <div style="width:64px; height:64px; background:var(--primary-light); color:var(--primary); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; margin:0 auto 16px;">👤</div>
+                    <h2 style="font-size:18px; font-weight:800;">System Admin</h2>
+                    <p style="color:var(--text-muted); font-size:12px; margin-bottom:24px;">Full Access Control</p>
+                    <button class="btn btn-outline" style="margin-bottom:12px; max-width:300px; margin: 0 auto 12px;" onclick="logoutAdmin()">Log Out</button>
+                    <hr style="border:0; border-top:1px dashed var(--border); margin:24px auto; max-width: 300px;">
+                    <button class="btn btn-danger" style="max-width:300px; margin:0 auto;" onclick="openDeleteModal()">⚠️ Delete Test Data</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SETTING SUB-PAGES -->
+        <div id="page-add-user" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('page-add-user')">← Back</button>
+                <h2 style="font-size:16px; font-weight:800; margin:0; margin-left:16px;">Staff User Form</h2>
+            </div>
+            <div class="page-body">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Username</label>
+                <input type="text" id="u-name" class="input-modern" placeholder="e.g. LEKHA">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Login Password</label>
+                <input type="password" id="u-pass" class="input-modern" placeholder="Create a password">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Role</label>
+                <select id="u-role" class="input-modern" onchange="document.getElementById('wrap-cat').style.display=(this.value==='data-entry'?'none':'block')">
+                    <option value="supervisor">Supervisor</option><option value="manager">Manager</option><option value="data-entry">Data Entry</option>
+                </select>
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Assign Branches</label>
+                <div class="checkbox-grid" style="margin-bottom:12px;">
+                    <label class="checkbox-item"><input type="checkbox" value="Iritty" class="branch-check"> Iritty</label>
+                    <label class="checkbox-item"><input type="checkbox" value="Mattannur" class="branch-check"> Mattannur</label>
+                </div>
+                <div id="wrap-cat">
+                    <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Assign Categories</label>
+                    <div id="cat-checkboxes" class="checkbox-grid" style="max-height:150px;"></div>
+                </div>
+                <button class="btn btn-primary" id="btn-save-user" onclick="createUser(this)" style="margin-top:16px;">Save User</button>
+            </div>
+        </div>
+
+        <div id="page-manage-users" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('page-manage-users')">← Back</button>
+                <h2 style="font-size:16px; font-weight:800; margin:0; margin-left:16px;">Manage Users</h2>
+            </div>
+            <div class="page-body" style="padding: 0; background: transparent; border: none; box-shadow: none;">
+                <div id="admin-user-list"></div>
+            </div>
+        </div>
+
+        <div id="page-sync-data" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('page-sync-data')">← Back</button>
+                <h2 style="font-size:16px; font-weight:800; margin:0; margin-left:16px;">ERP Data Sync</h2>
+            </div>
+            <div class="page-body">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Target Branch</label>
+                <select id="upload-branch" class="input-modern" onchange="updateDbCounters()"><option value="Iritty">Iritty</option><option value="Mattannur">Mattannur</option></select>
+                
+                <input type="file" id="inv-file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="syncData(this, 'inventory')">
+                <div class="upload-zone" onclick="document.getElementById('inv-file').click()">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                    <span id="inv-label" class="upload-text">Upload Master Inventory</span>
+                </div>
+                <div class="db-count" id="db-inv-count">Total in DB: 0 items</div>
+
+                <input type="file" id="ven-file" accept=".csv" class="hidden" onchange="syncData(this, 'vendors')">
+                <div class="upload-zone" onclick="document.getElementById('ven-file').click()">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                    <span id="ven-label" class="upload-text">Upload Vendor List</span>
+                </div>
+                <div class="db-count" id="db-ven-count">Total in DB: 0 vendors</div>
+            </div>
+        </div>
+
+        <div id="page-add-vendor" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('page-add-vendor')">← Back</button>
+                <h2 style="font-size:16px; font-weight:800; margin:0; margin-left:16px;">Manual Vendor</h2>
+            </div>
+            <div class="page-body">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Vendor Name</label>
+                <input type="text" id="manual-vendor-name" class="input-modern" placeholder="Vendor Name">
+                <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Target Branch</label>
+                <select id="manual-vendor-branch" class="input-modern"><option value="Iritty">Iritty</option><option value="Mattannur">Mattannur</option></select>
+                <button class="btn btn-primary" onclick="addManualVendor()" style="margin-top:16px;">Add Vendor</button>
+            </div>
+        </div>
+
+        <!-- CATEGORY DETAILS PAGE (Overlay) -->
+        <div id="view-category-details" class="page-overlay">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('view-category-details')">← Back</button>
+                <h2 id="cat-page-title" style="font-size:16px; font-weight:800; color:var(--text-main); margin:0; margin-left:16px; text-transform:uppercase;">Category</h2>
+            </div>
+            <div class="page-body">
+                <div id="cat-page-kpis"></div>
+                <div id="cat-po-list"></div>
+            </div>
+        </div>
+
+        <!-- ANALYTICS DRILL-DOWN PO LIST (Overlay) -->
+        <div id="view-analytics-po-list" class="page-overlay" style="z-index: 25;">
+            <div class="page-header" style="justify-content: flex-start;">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('view-analytics-po-list')">← Back</button>
+                <h2 id="analytics-po-list-title" style="font-size:15px; font-weight:800; color:var(--text-main); margin:0; margin-left:12px; line-height:1.2;">Pending POs</h2>
+            </div>
+            <div class="page-body" style="padding: 0; background: transparent; border: none; box-shadow: none;">
+                <div id="analytics-po-list-container" style="background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden;"></div>
+            </div>
+        </div>
+
+        <!-- PO DETAILS PAGE (Overlay) -->
+        <div id="view-po-details" class="page-overlay" style="z-index: 30;">
+            <div class="page-header">
+                <button class="btn btn-outline" style="width:auto; padding:6px 14px; border-radius:50px; font-weight:800;" onclick="closeOverlay('view-po-details')">← Back</button>
+                <h2 style="font-size:16px; font-weight:800; color:var(--text-main); margin:0; margin-left:16px;">Order Details</h2>
+            </div>
+            <div class="page-body" style="display:flex; flex-direction:column; padding: 24px;">
+                <div style="background:#f8f9fa; border: 1px solid var(--border); padding:16px; border-radius:8px; margin-bottom:16px; flex-shrink:0;">
+                    <div id="detail-supplier" style="font-size:16px; font-weight:800;"></div>
+                    <div id="detail-meta" style="font-size:12px; color:var(--text-muted); margin-top:4px;"></div>
+                    <div id="detail-status" style="font-size:10px; font-weight:800; padding:4px 8px; border-radius:6px; display:inline-block; margin-top:8px; text-transform:uppercase;"></div>
+                </div>
+                <div id="detail-items-container" style="flex: 1;"></div>
+            </div>
+        </div>
+    </div> 
+
+    <!-- DATE RANGE MODAL -->
+    <div id="date-range-modal" class="sheet-overlay" style="z-index: 3000;">
+        <div class="modal-box">
+            <h3 style="margin-bottom:16px; font-size:16px; font-weight:800;">Select Date Range</h3>
+            <label style="font-size:11px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">From Date</label>
+            <input type="date" id="modal-from-date" class="input-modern">
+            <label style="font-size:11px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; margin-top:8px;">To Date</label>
+            <input type="date" id="modal-to-date" class="input-modern">
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+                <button class="btn btn-outline" style="width:auto; padding:8px 16px;" onclick="document.getElementById('date-range-modal').classList.remove('active')">Cancel</button>
+                <button class="btn btn-primary" style="width:auto; padding:8px 24px;" onclick="applyDateRange()">Apply Range</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM MODAL -->
+    <div id="custom-modal" class="sheet-overlay" style="z-index: 3000;">
+        <div class="modal-box">
+            <h3 id="modal-title" style="margin-bottom:10px; font-size:16px; font-weight:800;">Notice</h3>
+            <p id="modal-msg" style="font-size:13px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;"></p>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button id="modal-btn-cancel" class="btn btn-outline" style="width:auto; padding:8px 16px;">Cancel</button>
+                <button id="modal-btn-ok" class="btn btn-primary" style="width:auto; padding:8px 24px;">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE MODAL -->
+    <div id="delete-modal" class="sheet-overlay" style="z-index: 3000;">
+        <div class="modal-box">
+            <h3 style="margin-bottom:10px; font-size:16px; font-weight:800; color:var(--danger);">Delete Test Data</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">Select the data you want to KEEP:</p>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; margin-bottom:10px;"><input type="checkbox" id="keep-inv" checked style="width:16px; height:16px; accent-color:var(--primary);"> Keep Master Inventory</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; margin-bottom:10px;"><input type="checkbox" id="keep-ven" checked style="width:16px; height:16px; accent-color:var(--primary);"> Keep Vendors List</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; margin-bottom:20px;"><input type="checkbox" id="keep-usr" checked style="width:16px; height:16px; accent-color:var(--primary);"> Keep Staff Users</label>
+            <p style="font-size:11px; color:var(--danger); margin-bottom:20px; font-weight:600;">⚠️ All Purchase Orders and Carts will be permanently deleted.</p>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn btn-outline" style="width:auto; padding:8px 16px;" onclick="document.getElementById('delete-modal').classList.remove('active')">Cancel</button>
+                <button class="btn btn-danger" style="width:auto; padding:8px 24px;" id="exec-del-btn" onclick="executeDelete(this)">Delete Data</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://huhfzxsrwdqakbpwxjrn.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1aGZ6eHNyd2RxYWticHd4anJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjY4MzUsImV4cCI6MjA5NTcwMjgzNX0.G6TTXOzSeVAnkzDkYzSGjqrvvPwLzJDMupnj0nDAh5o';
+    const windowSupabase = window.supabase; 
+    const supabaseClient = windowSupabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let users = []; let inventory = []; let vendors = []; let pos = [];
+    let adminBranch = 'Iritty'; 
+    let editingUser = null;
+    
+    // Desktop Charts Dictionary
+    let charts = {};
+    let chartDataStore = {}; // Holds raw data for the analytics view
+    let activeAnalyticsChart = null;
+
+    let globalFromDate = '';
+    let globalToDate = '';
+
+    const fmt = (num) => '₹' + Math.round(num || 0).toLocaleString('en-IN');
+    const fmtDate = (iso) => { if(!iso) return ''; const p = iso.split('-'); return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : iso; };
+
+    function showAlert(msg) {
+        document.getElementById('modal-title').innerText = "Notice";
+        document.getElementById('modal-msg').innerText = msg;
+        document.getElementById('modal-btn-cancel').style.display = 'none';
+        document.getElementById('modal-btn-ok').onclick = () => document.getElementById('custom-modal').classList.remove('active');
+        document.getElementById('custom-modal').classList.add('active');
+    }
+    function showConfirm(msg, cb) {
+        document.getElementById('modal-title').innerText = "Confirm Action";
+        document.getElementById('modal-msg').innerText = msg;
+        document.getElementById('modal-btn-cancel').style.display = 'block';
+        document.getElementById('modal-btn-cancel').onclick = () => document.getElementById('custom-modal').classList.remove('active');
+        document.getElementById('modal-btn-ok').onclick = () => { document.getElementById('custom-modal').classList.remove('active'); cb(); };
+        document.getElementById('custom-modal').classList.add('active');
+    }
+
+    window.onload = async () => {
+        const session = localStorage.getItem('mf_admin_session');
+        if (session) {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            await loadDataFromSupabase();
+        }
+    };
+
+    async function handleLogin(btn) {
+        const email = document.getElementById('login-email').value;
+        const pass = document.getElementById('login-pass').value;
+        if(!email || !pass) return showAlert("Enter email and password");
+
+        btn.disabled = true; btn.innerText = "Authenticating...";
+        const { error } = await supabaseClient.auth.signInWithPassword({ email: email, password: pass });
+        
+        if (error) {
+            btn.disabled = false; btn.innerText = "Secure Login";
+            return showAlert(error.message);
+        }
+
+        localStorage.setItem('mf_admin_session', 'active');
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('main-app').classList.remove('hidden');
+        await loadDataFromSupabase();
+    }
+
+    function logoutAdmin() {
+        supabaseClient.auth.signOut();
+        localStorage.removeItem('mf_admin_session');
+        location.reload();
+    }
+
+    async function fetchAllRows(tableName) {
+        let allData = []; let limit = 1000; let start = 0; let hasMore = true;
+        while (hasMore) {
+            const { data, error } = await supabaseClient.from(tableName).select('*').range(start, start + limit - 1);
+            if (error) throw error;
+            if (data.length > 0) { allData = allData.concat(data); start += limit; } else { hasMore = false; }
+        }
+        return allData;
+    }
+
+    function openDateRangeModal() {
+        document.getElementById('modal-from-date').value = globalFromDate;
+        document.getElementById('modal-to-date').value = globalToDate;
+        document.getElementById('date-range-modal').classList.add('active');
+    }
+
+    function applyDateRange() {
+        globalFromDate = document.getElementById('modal-from-date').value;
+        globalToDate = document.getElementById('modal-to-date').value;
+        
+        document.getElementById('date-range-modal').classList.remove('active');
+        refreshDashboard();
+    }
+
+    async function loadDataFromSupabase() {
+        const today = new Date();
+        const offset = today.getTimezoneOffset() * 60000;
+        const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
+        globalFromDate = localISOTime;
+        globalToDate = localISOTime;
+
+        try {
+            const [resInv, resVen, resUsr, resPos] = await Promise.all([
+                fetchAllRows('inventory'), fetchAllRows('vendors'), fetchAllRows('staff_users'), fetchAllRows('purchase_orders')
+            ]);
+            inventory = resInv; vendors = resVen; users = resUsr;
+            pos = resPos.map(p => ({
+                id: p.po_number, branch: p.branch, supplier: p.supplier,
+                category: p.category, total: p.total_amount, actualAmount: p.actual_amount,
+                status: p.status, items: p.items, isoDate: p.iso_date, receivedDate: p.received_date
+            }));
+            populateCatCheckboxes(); updateDbCounters(); refreshDashboard();
+        } catch (err) { showAlert("Error connecting to database. " + err.message); }
+    }
+
+    function cycleBranch() {
+        adminBranch = adminBranch === 'Iritty' ? 'Mattannur' : 'Iritty';
+        document.getElementById('app-title').innerText = `Dashboard - ${adminBranch}`;
+        refreshDashboard();
+    }
+
+    function switchTab(tabId, title, btn) {
+        document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+        
+        if(tabId === 'tab-settings') {
+            document.getElementById('icon-branch').classList.add('hidden');
+            document.getElementById('icon-calendar').classList.add('hidden');
+            document.getElementById('app-title').innerText = title;
+        } else {
+            document.getElementById('icon-branch').classList.remove('hidden');
+            document.getElementById('icon-calendar').classList.remove('hidden');
+            document.getElementById('app-title').innerText = `Dashboard - ${adminBranch}`;
+        }
+        if(tabId === 'tab-dashboard' || tabId === 'tab-purchase') refreshDashboard();
+    }
+
+    function toggleNav() {
+        const nav = document.getElementById('main-nav');
+        const showBtn = document.getElementById('show-nav-btn');
+        const arr = document.getElementById('nav-arrow');
+        if(nav.classList.contains('hidden-down')) {
+            nav.classList.remove('hidden-down'); showBtn.classList.add('hidden-down');
+            arr.innerHTML = '<path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/>';
+        } else {
+            nav.classList.add('hidden-down'); showBtn.classList.remove('hidden-down');
+            arr.innerHTML = '<path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/>';
+        }
+    }
+
+    // Modal UI Handlers (Disabling tabs when overlay is open)
+    function disableNav() { document.getElementById('main-nav').classList.add('nav-disabled'); }
+    function enableNav() { document.getElementById('main-nav').classList.remove('nav-disabled'); }
+
+    function openSettingPage(pageId) { disableNav(); if(pageId === 'page-manage-users') renderUserList(); document.getElementById(pageId).classList.add('active'); }
+    function closeSettingPage(pageId) { enableNav(); document.getElementById(pageId).classList.remove('active'); }
+    function openProfilePage() { disableNav(); document.getElementById('view-profile-page').classList.add('active'); }
+    
+    function closeOverlay(id) {
+        document.getElementById(id).classList.remove('active');
+        enableNav();
+    }
+
+    function openDeleteModal() { document.getElementById('delete-modal').classList.add('active'); }
+    async function executeDelete(btn) {
+        const keepInv = document.getElementById('keep-inv').checked;
+        const keepVen = document.getElementById('keep-ven').checked;
+        const keepUsr = document.getElementById('keep-usr').checked;
+        btn.disabled = true; btn.innerText = "Deleting...";
+        try {
+            if(!keepInv) await supabaseClient.from('inventory').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            if(!keepVen) await supabaseClient.from('vendors').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            if(!keepUsr) await supabaseClient.from('staff_users').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseClient.from('purchase_orders').delete().neq('po_number', '0');
+            document.getElementById('delete-modal').classList.remove('active');
+            showAlert("Data wiped successfully. Reloading..."); setTimeout(() => location.reload(), 1500);
+        } catch(e) { btn.disabled = false; btn.innerText = "Delete Data"; showAlert("Error deleting data: " + e.message); }
+    }
+
+    function openCreateUser() {
+        disableNav();
+        editingUser = null;
+        document.getElementById('u-name').value = ''; document.getElementById('u-name').readOnly = false;
+        document.getElementById('u-pass').value = '';
+        document.querySelectorAll('.branch-check').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.cat-check').forEach(cb => cb.checked = false);
+        document.getElementById('btn-save-user').innerText = 'Save User';
+        document.getElementById('page-add-user').classList.add('active');
+    }
+
+    function editUser(username) {
+        const u = users.find(x => x.username === username); if(!u) return;
+        editingUser = username;
+        document.getElementById('u-name').value = u.username; document.getElementById('u-name').readOnly = true; 
+        document.getElementById('u-pass').value = u.password; document.getElementById('u-role').value = u.role;
+        document.getElementById('wrap-cat').style.display = (u.role === 'data-entry') ? 'none' : 'block';
+        document.querySelectorAll('.branch-check').forEach(cb => cb.checked = u.branches.includes(cb.value));
+        document.querySelectorAll('.cat-check').forEach(cb => cb.checked = u.categories && u.categories.includes(cb.value));
+        document.getElementById('btn-save-user').innerText = "Update User";
+        document.getElementById('page-manage-users').classList.remove('active'); 
+        document.getElementById('page-add-user').classList.add('active');
+    }
+
+    function populateCatCheckboxes() {
+        const c = document.getElementById('cat-checkboxes'); c.innerHTML = '';
+        const cats = [...new Set(inventory.map(i => i.category).filter(Boolean))];
+        cats.forEach(cat => c.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${cat}" class="cat-check"> ${cat}</label>`);
+    }
+
+    async function createUser(btn) {
+        const uname = document.getElementById('u-name').value; const pass = document.getElementById('u-pass').value;
+        const r = document.getElementById('u-role').value;
+        const cats = Array.from(document.querySelectorAll('.cat-check:checked')).map(cb => cb.value);
+        const branches = Array.from(document.querySelectorAll('.branch-check:checked')).map(cb => cb.value);
+        
+        if(!uname || !pass) return showAlert("Enter a username and password");
+        if(branches.length === 0) return showAlert("Select at least one branch");
+        
+        btn.disabled = true; btn.innerText = "Saving to Cloud...";
+        try {
+            if(editingUser) {
+                const { error } = await supabaseClient.from('staff_users').update({ password: pass, role: r, branches: branches, categories: r==='data-entry' ? [] : cats }).eq('username', editingUser);
+                if (error) throw error;
+            } else {
+                const { error } = await supabaseClient.from('staff_users').insert([{ username: uname, password: pass, role: r, branches: branches, categories: r==='data-entry' ? [] : cats }]);
+                if (error) throw error;
+            }
+            const { data: newUsers } = await supabaseClient.from('staff_users').select('*');
+            users = newUsers;
+            btn.disabled = false; btn.innerText = editingUser ? "Update User" : "Save User";
+            closeOverlay('page-add-user'); showAlert(editingUser ? `User ${uname} updated.` : `User ${uname} created.`);
+            renderUserList();
+        } catch (err) { btn.disabled = false; btn.innerText = editingUser ? "Update User" : "Save User"; showAlert(err.message); }
+    }
+
+    function renderUserList() {
+        const list = document.getElementById('admin-user-list'); list.innerHTML = '';
+        if(users.length === 0) { list.innerHTML = '<div class="empty-state">No users created yet.</div>'; return; }
+        users.forEach((u) => {
+            list.innerHTML += `
+                <div class="user-card">
+                    <div class="uc-top">
+                        <div class="uc-name">${u.username}</div>
+                        <div class="uc-role">${u.role}</div>
+                    </div>
+                    <div class="uc-branches">Branches: ${u.branches.join(', ')}</div>
+                    <div class="uc-actions">
+                        <button class="btn btn-outline" onclick="editUser('${u.username}')">Edit</button>
+                        <button class="btn btn-danger" onclick="deleteUser('${u.username}')">Delete</button>
+                    </div>
+                </div>`;
+        });
+    }
+
+    function deleteUser(username) {
+        showConfirm(`Are you sure you want to delete user ${username}?`, async () => {
+            const { error } = await supabaseClient.from('staff_users').delete().eq('username', username);
+            if(error) return showAlert(error.message);
+            const { data } = await supabaseClient.from('staff_users').select('*'); users = data; renderUserList();
+        });
+    }
+
+    function updateDbCounters() {
+        const branch = document.getElementById('upload-branch').value;
+        document.getElementById('db-inv-count').innerText = `Total in DB: ${inventory.filter(i => i.branch === branch).length} items`;
+        document.getElementById('db-ven-count').innerText = `Total in DB: ${vendors.filter(v => v.branch === branch).length} vendors`;
+    }
+
+    function normalize(obj) { let newObj = {}; for(let key in obj) newObj[key.trim().toLowerCase()] = obj[key]; return newObj; }
+
+    function syncData(input, type) {
+        if(!input.files[0]) return;
+        const file = input.files[0]; const branch = document.getElementById('upload-branch').value;
+        const label = document.getElementById(type === 'inventory' ? 'inv-label' : 'ven-label');
+        const originalText = label.innerText; label.innerText = "Reading file...";
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            let json = [];
+            if (file.name.endsWith('.csv')) {
+                const csvStr = new TextDecoder().decode(e.target.result);
+                json = Papa.parse(csvStr, { header: true, skipEmptyLines: true }).data;
+            } else {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+                json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {defval: ""}); 
+            }
+            json = json.map(normalize); label.innerText = "Syncing (Do not close)...";
+
+            try {
+                if (type === 'inventory') {
+                    const batch = json.map(row => {
+                        let iCode = row['item code'] || row['itemcode'] || ''; if(!iCode) return null;
+                        return { item_code: String(iCode), item_name: row['item name'] || row['name'] || row['itemname'] || '', category: row['category group'] || row['category'] || row['categorygroup'] || '', brand: row['brand'] || '', cost: parseFloat(row['purchase cost'] || row['cost'] || row['purchasecost']) || 0, mrp: parseFloat(row['mrp']) || 0, barcode: String(row['barcode'] || ''), branch: branch };
+                    }).filter(Boolean);
+
+                    for(let i=0; i<batch.length; i+=500) {
+                        label.innerText = `Uploading... ${Math.round((i/batch.length)*100)}%`;
+                        const { error } = await supabaseClient.from('inventory').upsert(batch.slice(i, i+500), { onConflict: 'item_code, branch' });
+                        if(error) throw error;
+                    }
+                    inventory = await fetchAllRows('inventory'); populateCatCheckboxes(); updateDbCounters(); label.innerText = `✓ Synced ${batch.length} items`;
+                } else {
+                    const batch = json.map(v => { let vName = v.name || v.name || ''; if(!vName) return null; return { name: vName, branch: branch }; }).filter(Boolean);
+                    for(let i=0; i<batch.length; i+=500) {
+                        label.innerText = `Uploading... ${Math.round((i/batch.length)*100)}%`;
+                        const { error } = await supabaseClient.from('vendors').upsert(batch.slice(i, i+500), { onConflict: 'name, branch' });
+                        if(error) throw error;
+                    }
+                    vendors = await fetchAllRows('vendors'); updateDbCounters(); label.innerText = `✓ Synced ${batch.length} vendors`;
+                }
+                setTimeout(() => label.innerText = originalText, 4000);
+            } catch (err) { label.innerText = `❌ Error during sync`; showAlert("Error syncing: " + err.message); setTimeout(() => label.innerText = originalText, 4000); }
+        };
+        reader.readAsArrayBuffer(file); input.value = "";
+    }
+
+    async function addManualVendor() {
+        const vName = document.getElementById('manual-vendor-name').value.trim(); const branch = document.getElementById('manual-vendor-branch').value;
+        if(!vName) return showAlert("Enter vendor name");
+        const { error } = await supabaseClient.from('vendors').insert([{ name: vName, branch: branch }]);
+        if(error) return showAlert("Error: " + error.message);
+        vendors = await fetchAllRows('vendors'); updateDbCounters();
+        document.getElementById('manual-vendor-name').value = ''; showAlert(`Vendor ${vName} added to ${branch}!`);
+    }
+
+    function getGradientClass(amt) { if(amt > 100000) return 'grad-red'; if(amt > 50000) return 'grad-orange'; return 'grad-green'; }
+
+    function refreshDashboard() {
+        if(document.getElementById('tab-dashboard').classList.contains('active') || document.getElementById('tab-purchase').classList.contains('active')) {
+            document.getElementById('app-title').innerText = `Dashboard - ${adminBranch}`;
+        }
+        
+        const validPOs = pos.filter(po => po.branch === adminBranch);
+        const allCats = [...new Set(inventory.filter(i => i.branch === adminBranch).map(i => i.category).filter(Boolean))];
+        
+        // 1. PO CREATED LOGIC
+        if(document.getElementById('tab-dashboard').classList.contains('active')) {
+            const todayPOs = validPOs.filter(p => p.isoDate >= globalFromDate && p.isoDate <= globalToDate);
+            let totAmtPO = 0; let totCntPO = todayPOs.length;
+            const catMapPO = {}; const supMapPO = {}; const brandMapPO = {}; const itemMapPO = {};
+            
+            allCats.forEach(c => catMapPO[c] = { amt: 0, pos: [] });
+
+            todayPOs.forEach(po => {
+                totAmtPO += po.total; const c = po.category || 'Uncategorized';
+                if(!catMapPO[c]) catMapPO[c] = { amt: 0, pos: [] };
+                catMapPO[c].amt += po.total; catMapPO[c].pos.push(po);
+                
+                if(!supMapPO[po.supplier]) supMapPO[po.supplier] = 0;
+                supMapPO[po.supplier] += po.total;
+                
+                po.items.forEach(item => {
+                    let b = item.brand || 'Unbranded';
+                    if(!brandMapPO[b]) brandMapPO[b] = 0;
+                    brandMapPO[b] += (item.cost * item.qty);
+                    
+                    if(!itemMapPO[item.name]) itemMapPO[item.name] = 0;
+                    itemMapPO[item.name] += (item.cost * item.qty);
+                });
+            });
+
+            document.getElementById('kpi-po-amt').innerText = fmt(totAmtPO);
+            document.getElementById('kpi-po-cnt').innerText = totCntPO;
+            document.getElementById('kpi-po-avg').innerText = totCntPO ? fmt(totAmtPO / totCntPO) : '₹0';
+            document.getElementById('kpi-po-cats').innerText = Object.keys(catMapPO).filter(k => catMapPO[k].amt > 0).length;
+
+            const listPO = document.getElementById('po-category-list'); listPO.innerHTML = '';
+            Object.keys(catMapPO).forEach(cat => {
+                const data = catMapPO[cat]; const grad = getGradientClass(data.amt);
+                listPO.innerHTML += `<div class="cat-tile ${grad}" onclick='openCategoryPage("${cat}", "po", ${JSON.stringify(data.pos).replace(/'/g, "&apos;")})'>
+                    <div><div class="cat-name">${cat}</div><div class="cat-meta">Orders: ${data.pos.length}</div></div>
+                    <div class="cat-amt">${fmt(data.amt)}</div></div>`;
+            });
+            
+            drawDesktopCharts(catMapPO, supMapPO, brandMapPO, null, null, validPOs, null, itemMapPO);
+        }
+        
+        // 2. PURCHASE RECEIVED LOGIC
+        // 2. PURCHASE RECEIVED LOGIC
+        if(document.getElementById('tab-purchase').classList.contains('active')) {
+            const rcvdPOs = validPOs.filter(p => p.status === 'Received' && p.receivedDate >= globalFromDate && p.receivedDate <= globalToDate);
+            let poAmtRcvd = 0; let actAmtRcvd = 0; let totCntRcvd = rcvdPOs.length;
+            const catMapRcvd = {}; const supVarMap = {}; const brandMapRcvd = {};
+            
+            allCats.forEach(c => catMapRcvd[c] = { poAmt: 0, actAmt: 0, pos: [] });
+
+            rcvdPOs.forEach(po => {
+                poAmtRcvd += po.total; actAmtRcvd += po.actualAmount; const c = po.category || 'Uncategorized';
+                if(!catMapRcvd[c]) catMapRcvd[c] = { poAmt: 0, actAmt: 0, pos: [] };
+                catMapRcvd[c].poAmt += po.total; catMapRcvd[c].actAmt += po.actualAmount; catMapRcvd[c].pos.push(po);
+                
+                if(!supVarMap[po.supplier]) supVarMap[po.supplier] = 0;
+                supVarMap[po.supplier] += (po.actualAmount - po.total);
+
+                po.items.forEach(item => {
+                    let b = item.brand || 'Unbranded';
+                    if(!brandMapRcvd[b]) brandMapRcvd[b] = 0;
+                    brandMapRcvd[b] += (item.cost * item.qty);
+                });
+            });
+
+            document.getElementById('kpi-rcvd-po').innerText = fmt(poAmtRcvd);
+            document.getElementById('kpi-rcvd-act').innerText = fmt(actAmtRcvd);
+            document.getElementById('kpi-rcvd-cnt').innerText = totCntRcvd;
+            let diff = actAmtRcvd - poAmtRcvd;
+            document.getElementById('kpi-rcvd-var').innerText = `${diff > 0 ? '+' : ''}${fmt(diff)}`;
+            document.getElementById('kpi-rcvd-var').style.color = diff > 0 ? "var(--danger)" : "var(--success)";
+
+            const listRcvd = document.getElementById('rcvd-category-list'); listRcvd.innerHTML = '';
+            Object.keys(catMapRcvd).forEach(cat => {
+                const data = catMapRcvd[cat]; const grad = getGradientClass(data.actAmt);
+                listRcvd.innerHTML += `<div class="cat-tile ${grad}" onclick='openCategoryPage("${cat}", "rcvd", ${JSON.stringify(data.pos).replace(/'/g, "&apos;")})'>
+                    <div><div class="cat-name">${cat}</div><div class="cat-meta">Est: ${fmt(data.poAmt)}</div></div>
+                    <div class="cat-amt">${fmt(data.actAmt)}</div></div>`;
+            });
+            
+            drawDesktopCharts(null, null, null, catMapRcvd, supVarMap, validPOs, brandMapRcvd, null);
+        }
+    }
+
+    function destroyChart(c) { if(charts[c]) charts[c].destroy(); }
+
+    function drawDesktopCharts(poCatMap, poSupMap, poBrandMap, rcvdCatMap, rcvdSupMap, allPOs, rcvdBrandMap, poItemMap) {
+        Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif"; 
+        Chart.defaults.color = '#5f6368'; 
+        Chart.defaults.font.size = 10;
+        
+        const getTrendDates = (startStr, endStr) => {
+            let d = []; 
+            let start = new Date(startStr); 
+            let end = new Date(endStr);
+            
+            // Calculate difference in days (inclusive)
+            let diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            
+            // Force minimum 10 days for line charts
+            if (diffDays < 10) {
+                start = new Date(end);
+                start.setDate(start.getDate() - 9);
+            }
+            
+            let curr = new Date(start);
+            while(curr <= end) {
+                d.push(curr.toISOString().split('T')[0]);
+                curr.setDate(curr.getDate() + 1);
+            }
+            return d;
+        };
+        const activeDates = getTrendDates(globalFromDate, globalToDate);
+
+        // --- PO DASHBOARD CHARTS ---
+        if(poCatMap && document.getElementById('poDesktopChart')) {
+            const labels = Object.keys(poCatMap).filter(k => poCatMap[k].amt > 0);
+            
+            // 1. Volume Bar
+            destroyChart('poDesktopChart');
+            chartDataStore['poVolume'] = { type: 'bar', data: { labels: labels, datasets: [{ label: 'Order Value (₹)', data: labels.map(k => poCatMap[k].amt), backgroundColor: '#1a73e8', borderRadius: 4 }] }};
+            charts['poDesktopChart'] = new Chart(document.getElementById('poDesktopChart'), { ...chartDataStore['poVolume'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            
+            // 2. PO Ageing Report (Unreceived Value)
+            const todayDate = new Date(); 
+            const tzOffset = todayDate.getTimezoneOffset() * 60000;
+            const refDate = new Date(todayDate - tzOffset); 
+            
+            const ageBuckets = { '0-2 Days': 0, '3-5 Days': 0, '6-10 Days': 0, '11+ Days': 0 };
+            const ageRawData = { '0-2 Days': [], '3-5 Days': [], '6-10 Days': [], '11+ Days': [] };
+            
+            allPOs.filter(p => p.status !== 'Received').forEach(po => {
+                const poD = new Date(po.isoDate);
+                const diffDays = Math.floor((refDate - poD) / (1000 * 60 * 60 * 24));
+                
+                if (diffDays <= 2) { ageBuckets['0-2 Days'] += po.total; ageRawData['0-2 Days'].push(po); }
+                else if (diffDays <= 5) { ageBuckets['3-5 Days'] += po.total; ageRawData['3-5 Days'].push(po); }
+                else if (diffDays <= 10) { ageBuckets['6-10 Days'] += po.total; ageRawData['6-10 Days'].push(po); }
+                else { ageBuckets['11+ Days'] += po.total; ageRawData['11+ Days'].push(po); }
+            });
+
+            destroyChart('poAgeingChart');
+            chartDataStore['poAgeing'] = { 
+                type: 'bar', 
+                _rawData: ageRawData, // Embed the raw POs for drill-down
+                data: { 
+                    labels: Object.keys(ageBuckets), 
+                    datasets: [{ label: 'Pending Value (₹)', data: Object.values(ageBuckets), backgroundColor: ['#34a853', '#fbbc04', '#ff6d01', '#ea4335'], borderRadius: 4 }] 
+                }
+            };
+            charts['poAgeingChart'] = new Chart(document.getElementById('poAgeingChart'), { 
+                ...chartDataStore['poAgeing'], 
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } 
+            });
+            
+            // 3. Line Trend (Count)
+            const trendData = activeDates.map(d => allPOs.filter(p => p.isoDate === d).length);
+            destroyChart('poLineChart');
+            chartDataStore['poTrend'] = { type: 'line', data: { labels: activeDates.map(d=>fmtDate(d)), datasets: [{ label: 'POs Created', data: trendData, borderColor: '#ea4335', tension: 0.3, fill: true, backgroundColor: 'rgba(234, 67, 53, 0.1)' }] }};
+            charts['poLineChart'] = new Chart(document.getElementById('poLineChart'), { ...chartDataStore['poTrend'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+            
+            // 4. Top Suppliers
+            const topSupLabels = Object.keys(poSupMap).sort((a,b) => poSupMap[b] - poSupMap[a]).slice(0, 5);
+            destroyChart('poSupplierChart');
+            chartDataStore['poSup'] = { type: 'bar', data: { labels: topSupLabels.map(l => l.substring(0,10)), datasets: [{ label: 'Volume (₹)', data: topSupLabels.map(k => poSupMap[k]), backgroundColor: '#fbbc04', borderRadius: 4 }] }};
+            charts['poSupplierChart'] = new Chart(document.getElementById('poSupplierChart'), { ...chartDataStore['poSup'], options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            // 5. Brand Distribution
+            const brandLabels = Object.keys(poBrandMap).sort((a,b) => poBrandMap[b] - poBrandMap[a]).slice(0, 6);
+            destroyChart('poBrandChart');
+            chartDataStore['poBrand'] = { type: 'doughnut', data: { labels: brandLabels, datasets: [{ label: 'Value (₹)', data: brandLabels.map(k => poBrandMap[k]), backgroundColor: ['#ea4335', '#1a73e8', '#fbbc04', '#34a853', '#46bdc6', '#dadce0'] }] }};
+            charts['poBrandChart'] = new Chart(document.getElementById('poBrandChart'), { ...chartDataStore['poBrand'], options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right' } } } });
+
+            // 6. Daily Order Value Trend
+            const dailyValData = activeDates.map(d => { const dPos = allPOs.filter(p => p.isoDate === d); return dPos.reduce((s,p)=>s+p.total, 0); });
+            destroyChart('poDailyValChart');
+            chartDataStore['poDailyVal'] = { type: 'line', data: { labels: activeDates.map(d=>fmtDate(d)), datasets: [{ label: 'Daily Value (₹)', data: dailyValData, borderColor: '#1a73e8', tension: 0.3, fill: true, backgroundColor: 'rgba(26, 115, 232, 0.1)' }] }};
+            charts['poDailyValChart'] = new Chart(document.getElementById('poDailyValChart'), { ...chartDataStore['poDailyVal'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+        }
+        
+        // --- RCVD DASHBOARD CHARTS ---
+        if(rcvdCatMap && document.getElementById('rcvdDesktopChart')) {
+            const labels = Object.keys(rcvdCatMap).filter(k => rcvdCatMap[k].actAmt > 0);
+            const palette = ['#34a853', '#9c27b0', '#ff6d01', '#1a73e8', '#e91e63', '#00bcd4', '#ffeb3b']; 
+
+            // 1. Volume Bar (Multi-color)
+            destroyChart('rcvdDesktopChart');
+            chartDataStore['rcvdVolume'] = { type: 'bar', data: { labels: labels, datasets: [{ label: 'Actual Rcvd (₹)', data: labels.map(k => rcvdCatMap[k].actAmt), backgroundColor: palette, borderRadius: 4 }] }};
+            charts['rcvdDesktopChart'] = new Chart(document.getElementById('rcvdDesktopChart'), { ...chartDataStore['rcvdVolume'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            // 2. Variance Group Bar (Grey vs Blue)
+            destroyChart('rcvdVarianceChart');
+            chartDataStore['rcvdVar'] = { type: 'bar', data: { labels: labels, datasets: [ { label: 'System Est', data: labels.map(k => rcvdCatMap[k].poAmt), backgroundColor: '#dadce0' }, { label: 'Actual Rcvd', data: labels.map(k => rcvdCatMap[k].actAmt), backgroundColor: '#1a73e8' } ]}};
+            charts['rcvdVarianceChart'] = new Chart(document.getElementById('rcvdVarianceChart'), { ...chartDataStore['rcvdVar'], options: { responsive: true, maintainAspectRatio: false } });
+            
+            // 3. Receipt Trends (Purple)
+            const trendData = activeDates.map(d => allPOs.filter(p => p.status==='Received' && p.receivedDate === d).reduce((s,p)=>s+p.actualAmount, 0));
+            destroyChart('rcvdLineChart');
+            chartDataStore['rcvdTrend'] = { type: 'line', data: { labels: activeDates.map(d=>fmtDate(d)), datasets: [{ label: 'Value Rcvd (₹)', data: trendData, borderColor: '#9c27b0', tension: 0.3, fill: true, backgroundColor: 'rgba(156, 39, 176, 0.1)' }] }};
+            charts['rcvdLineChart'] = new Chart(document.getElementById('rcvdLineChart'), { ...chartDataStore['rcvdTrend'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+            
+            // 4. Supplier Variances (Red/Green logic)
+            const varSupLabels = Object.keys(rcvdSupMap).sort((a,b) => Math.abs(rcvdSupMap[b]) - Math.abs(rcvdSupMap[a])).slice(0, 5);
+            const varSupData = varSupLabels.map(k => rcvdSupMap[k]);
+            destroyChart('rcvdSupplierChart');
+            chartDataStore['rcvdSup'] = { type: 'bar', data: { labels: varSupLabels.map(l => l.substring(0,10)), datasets: [{ label: 'Variance (₹)', data: varSupData, backgroundColor: varSupData.map(v => v>0?'#ea4335':'#34a853'), borderRadius: 4 }] }};
+            charts['rcvdSupplierChart'] = new Chart(document.getElementById('rcvdSupplierChart'), { ...chartDataStore['rcvdSup'], options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            // 5. Variance Trend Line (Orange)
+            const varTrendData = activeDates.map(d => {
+                const rPOs = allPOs.filter(p => p.status === 'Received' && p.receivedDate === d);
+                return rPOs.reduce((s,p) => s + (p.actualAmount - p.total), 0);
+            });
+            destroyChart('rcvdVarTrendChart');
+            chartDataStore['rcvdVarTrend'] = { type: 'line', data: { labels: activeDates.map(d=>fmtDate(d)), datasets: [{ label: 'Net Variance (₹)', data: varTrendData, borderColor: '#ff6d01', tension: 0.1, fill: true, backgroundColor: 'rgba(255, 109, 1, 0.1)' }] }};
+            charts['rcvdVarTrendChart'] = new Chart(document.getElementById('rcvdVarTrendChart'), { ...chartDataStore['rcvdVarTrend'], options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            // 6. Received Brand Distribution (New Distinct Palette)
+            const brandLabels = rcvdBrandMap ? Object.keys(rcvdBrandMap).sort((a,b) => rcvdBrandMap[b] - rcvdBrandMap[a]).slice(0, 6) : [];
+            destroyChart('rcvdBrandChart');
+            chartDataStore['rcvdBrand'] = { type: 'doughnut', data: { labels: brandLabels, datasets: [{ label: 'Value (₹)', data: brandLabels.map(k => rcvdBrandMap[k]), backgroundColor: ['#00bcd4', '#ff9800', '#e91e63', '#8bc34a', '#3f51b5', '#795548'] }] }};
+            charts['rcvdBrandChart'] = new Chart(document.getElementById('rcvdBrandChart'), { ...chartDataStore['rcvdBrand'], options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right' } } } });
+        }
+    }
+
+    let currentAnalyticsConfig = null;
+    let currentSortCol = 0;
+    let currentSortAsc = true;
+
+    function openAnalytics(chartKey, title) {
+        disableNav();
+        document.getElementById('analytics-title').innerText = title;
+        
+        const config = chartDataStore[chartKey];
+        if(!config) return;
+
+        currentAnalyticsConfig = config;
+
+        // Reset sort to default (Column 0, Ascending) and render table
+        currentSortCol = 0;
+        currentSortAsc = true;
+        renderAnalyticsTable(0, false); 
+        
+        document.getElementById('view-analytics-details').classList.add('active');
+    }
+
+    function renderAnalyticsTable(sortCol, toggle = true) {
+        if(toggle) {
+            if(currentSortCol === sortCol) {
+                currentSortAsc = !currentSortAsc; // Toggle Asc/Desc
+            } else {
+                currentSortCol = sortCol;
+                currentSortAsc = true; // New column, reset to Asc
+            }
+        }
+
+        const config = currentAnalyticsConfig;
+        
+        // 1. Build Sortable Rows Array
+        let rows = config.data.labels.map((lbl, i) => {
+            return { label: lbl, values: config.data.datasets.map(ds => ds.data[i]) };
+        });
+
+        // 2. Sort Logic (Includes Categorical sorting for Ageing buckets)
+        const sortWeights = { '0-2 Days': 1, '3-5 Days': 2, '6-10 Days': 3, '11+ Days': 4 };
+        
+        rows.sort((a, b) => {
+            let valA = currentSortCol === 0 ? a.label : a.values[currentSortCol - 1];
+            let valB = currentSortCol === 0 ? b.label : b.values[currentSortCol - 1];
+            
+            if(typeof valA === 'string') {
+                if (sortWeights[valA] && sortWeights[valB]) {
+                    return currentSortAsc ? sortWeights[valA] - sortWeights[valB] : sortWeights[valB] - sortWeights[valA];
+                }
+                return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            }
+            return currentSortAsc ? (valA - valB) : (valB - valA);
+        });
+
+        const arrow = currentSortAsc ? '↑' : '↓';
+        
+        // 3. Build Clickable Headers
+        let ths = `<th onclick="renderAnalyticsTable(0)">Row Label ${currentSortCol === 0 ? `<span class="sort-icon">${arrow}</span>` : ''}</th>`;
+        config.data.datasets.forEach((ds, i) => {
+            ths += `<th style="text-align:right;" onclick="renderAnalyticsTable(${i + 1})">${ds.label || 'Value'} ${currentSortCol === (i + 1) ? `<span class="sort-icon">${arrow}</span>` : ''}</th>`;
+        });
+        
+        // 4. Build Rows (With Click logic for rawData)
+        let trs = '';
+        let totals = new Array(config.data.datasets.length).fill(0);
+
+        rows.forEach(row => {
+            let isClickable = config._rawData && config._rawData[row.label] ? true : false;
+            let trStyle = isClickable ? 'cursor:pointer;' : '';
+            let trClick = isClickable ? `onclick="openAnalyticsPOList('${row.label}')"` : '';
+            
+            let tds = `<td style="font-weight:600; color:#5f6368;">${row.label} ${isClickable ? '<span style="float:right; font-size:10px; font-weight:800; color:var(--primary); margin-top:2px;">VIEW POs →</span>' : ''}</td>`;
+            
+            config.data.datasets.forEach((ds, dsIdx) => {
+                let val = row.values[dsIdx];
+                totals[dsIdx] += val;
+                let displayVal = typeof val === 'number' && (ds.label.includes('(₹)') || ds.label.includes('Value')) ? fmt(val) : val;
+                tds += `<td style="text-align:right; font-variant-numeric: tabular-nums;">${displayVal}</td>`;
+            });
+            trs += `<tr style="${trStyle}" ${trClick}>${tds}</tr>`;
+        });
+        
+        // 5. Build Totals Row
+        let totTds = `<td>Grand Total</td>`;
+        config.data.datasets.forEach((ds, idx) => {
+            let val = totals[idx];
+            let displayVal = typeof val === 'number' && (ds.label.includes('(₹)') || ds.label.includes('Value')) ? fmt(val) : val;
+            totTds += `<td style="text-align:right; font-variant-numeric: tabular-nums;">${displayVal}</td>`;
+        });
+        
+        document.getElementById('analytics-table-container').innerHTML = `
+            <div class="report-table-wrapper">
+                <table class="report-table">
+                    <thead><tr>${ths}</tr></thead>
+                    <tbody>${trs}</tbody>
+                    <tfoot><tr class="report-total-row">${totTds}</tr></tfoot>
+                </table>
+            </div>`;
+    }
+
+    function openAnalyticsPOList(label) {
+        const pos = currentAnalyticsConfig._rawData[label];
+        document.getElementById('analytics-po-list-title').innerText = `Pending POs: ${label}`;
+        const list = document.getElementById('analytics-po-list-container');
+        list.innerHTML = '';
+        
+        if(!pos || pos.length === 0) {
+            list.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600;">No pending POs in this range.</div>';
+        } else {
+            pos.forEach(po => {
+                list.innerHTML += `
+                <div class="cat-po-card" onclick="openPODetails('${po.id}')" style="display:flex; justify-content:space-between; align-items:center; padding:16px; border-bottom:1px solid var(--border); cursor:pointer;">
+                    <div>
+                        <div style="font-weight:800; font-size:14px; color:var(--text-main); margin-bottom:4px;">${po.supplier}</div>
+                        <div style="font-size:11px; font-weight:600; color:var(--text-muted);">${po.id} • ${po.branch}</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:800; font-size:15px; color:var(--danger); margin-bottom:4px;">${fmt(po.total)}</div>
+                        <div style="font-size:11px; font-weight:700; color:var(--primary);">Details →</div>
+                    </div>
+                </div>`;
+            });
+        }
+        document.getElementById('view-analytics-po-list').classList.add('active');
+    }
+
+    function openCategoryPage(cat, mode, poData) {
+        disableNav();
+        document.getElementById('cat-page-title').innerText = cat;
+        const kpis = document.getElementById('cat-page-kpis');
+        const list = document.getElementById('cat-po-list'); list.innerHTML = '';
+
+        if(mode === 'po') {
+            const tot = poData.reduce((sum, p) => sum + p.total, 0);
+            const avg = poData.length > 0 ? tot / poData.length : 0;
+            const uniqueSuppliers = [...new Set(poData.map(p => p.supplier))].length;
+
+            kpis.innerHTML = `
+                <div class="kpi-box"><div class="kpi-label">Category Total</div><div class="kpi-val" style="color:var(--primary);">${fmt(tot)}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Total Orders</div><div class="kpi-val">${poData.length}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Avg Order Value</div><div class="kpi-val">${fmt(Math.round(avg))}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Suppliers</div><div class="kpi-val">${uniqueSuppliers}</div></div>`;
+                
+            if(poData.length === 0) list.innerHTML = '<div class="empty-state">No orders in this category.</div>';
+            
+            poData.forEach(po => {
+                list.innerHTML += `
+                <div class="card cat-po-card" onclick="openPODetails('${po.id}')">
+                    <div style="font-weight:800; font-size:14px; color:var(--text-main);">${po.supplier}</div>
+                    <div style="font-weight:800; font-size:15px; color:var(--primary); text-align:right;">${fmt(po.total)}</div>
+                    <div style="font-size:11px; font-weight:600; color:var(--text-muted);">${po.id} • ${po.branch}</div>
+                    <div style="font-size:11px; font-weight:700; color:var(--primary); text-align:right;">Details →</div>
+                </div>`;
+            });
+        } else {
+            const pTot = poData.reduce((sum, p) => sum + p.total, 0);
+            const aTot = poData.reduce((sum, p) => sum + p.actualAmount, 0);
+            const variance = aTot - pTot;
+            const varColor = variance > 0 ? 'var(--danger)' : 'var(--success)';
+            const varPrefix = variance > 0 ? '+' : '';
+
+            kpis.innerHTML = `
+                <div class="kpi-box"><div class="kpi-label">PO Est</div><div class="kpi-val">${fmt(pTot)}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Actual Rcvd</div><div class="kpi-val" style="color:var(--success);">${fmt(aTot)}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Variance</div><div class="kpi-val" style="color:${varColor};">${varPrefix}${fmt(variance)}</div></div>
+                <div class="kpi-box"><div class="kpi-label">Total Receipts</div><div class="kpi-val">${poData.length}</div></div>`;
+                
+            if(poData.length === 0) list.innerHTML = '<div class="empty-state">No receipts in this category.</div>';
+
+            poData.forEach(po => {
+                list.innerHTML += `
+                <div class="card cat-po-card" onclick="openPODetails('${po.id}')">
+                    <div style="font-weight:800; font-size:14px; color:var(--text-main);">${po.supplier}</div>
+                    <div style="font-weight:800; font-size:15px; color:var(--success); text-align:right;">${fmt(po.actualAmount)}</div>
+                    <div style="font-size:11px; font-weight:600; color:var(--text-muted);">Est: ${fmt(po.total)} • ${po.id}</div>
+                    <div style="font-size:11px; font-weight:700; color:var(--primary); text-align:right;">Details →</div>
+                </div>`;
+            });
+        }
+        document.getElementById('view-category-details').classList.add('active');
+    }
+
+    function closeCategoryPage() { closeOverlay('view-category-details'); }
+
+    function openPODetails(poId) {
+        disableNav();
+        const po = pos.find(p => p.id === poId); if(!po) return;
+        document.getElementById('detail-supplier').innerText = po.supplier;
+        document.getElementById('detail-meta').innerText = `${po.id} • ${fmtDate(po.isoDate)} • ${po.branch}`;
+        const statEl = document.getElementById('detail-status'); statEl.innerText = po.status;
+        statEl.style.background = po.status === 'Approved' ? '#e6f4ea' : (po.status === 'Received' ? '#e8f0fe' : '#fce8e6');
+        statEl.style.color = po.status === 'Approved' ? 'var(--success)' : (po.status === 'Received' ? 'var(--primary)' : 'var(--danger)');
+
+        const cont = document.getElementById('detail-items-container');
+        let trs = po.items.map(it => `<tr><td>${it.name}</td><td>${fmt(it.mrp)}</td><td>${fmt(it.cost)}</td><td style="text-align:center;">${it.qty}</td><td style="text-align:right; color:var(--primary);">${fmt(it.cost * it.qty)}</td></tr>`).join('');
+        cont.innerHTML = `<div class="table-wrapper"><table class="styled-table">
+            <thead><tr><th>Item Name</th><th>MRP</th><th>Unit Cost</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Total</th></tr></thead>
+            <tbody>${trs}</tbody></table></div>
+            <div style="text-align:right; font-weight:800; font-size:16px;">System Est: <span style="color:var(--text-main);">${fmt(po.total)}</span></div>
+            ${po.status === 'Received' ? `<div style="text-align:right; font-weight:800; font-size:16px; margin-top:8px; color:var(--success);">Actual Rcvd: ${fmt(po.actualAmount)}</div>` : ''}`;
+        
+        document.getElementById('view-po-details').classList.add('active');
+    }
+
+    function closePODetails() { closeOverlay('view-po-details'); }
+</script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('Service Worker registered!', reg))
+                .catch(err => console.log('Service Worker failed', err));
+        });
+    }
+</script>
+</body>
+</html>
