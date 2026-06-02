@@ -141,19 +141,19 @@
             .app-shell { max-width: 100%; border-radius: 0; box-shadow: none; flex-direction: column; }
             
             /* Two-Row Split Header/TabStrip */
-            .app-header { flex-direction: column; align-items: stretch; padding: 0; background: #ffffff; border-bottom: none; height: auto; z-index: 10; }
-            .header-title-container { width: 100%; height: 40px; padding: 0 32px; border-bottom: 1px solid #dadce0; justify-content: space-between; }
-            .app-header h1 { color: #1f1f1f; font-size: 15px; letter-spacing: 0.2px; }
+            .app-header { flex-direction: column; align-items: stretch; padding: 0; background: #003366; border-bottom: none; height: auto; z-index: 10; }
+            .header-title-container { width: 100%; height: 40px; padding: 0 32px; justify-content: space-between; background: #003366; border-bottom: none; }
+            .app-header h1 { color: #ffffff; font-size: 15px; letter-spacing: 0.2px; font-weight: 800; }
             .desktop-header-logout { display: block; color: #ffb3b3; font-size: 12px; font-weight: 700; cursor: pointer; transition: color 0.2s; }
             .desktop-header-logout:hover { color: #ffcccc; }
             
-            /* Colored Tab Strip */
-            .header-icons { width: 100%; height: 36px; background: #003366; justify-content: flex-start; padding: 0 24px; gap: 0; }
-            .header-icon { width: auto; height: 100%; border-radius: 0; padding: 0 16px; color: #b0c4de; font-size: 12px; font-weight: 600; margin-right: 4px; border-bottom: 3px solid transparent; }
-            .header-icon svg { display: none; } /* Hide icons */
+            /* Tab Strip (White w/ Slight Blue) */
+            .header-icons { width: 100%; height: 36px; background: #f4f7fa; border-bottom: 1px solid #d2dbe3; justify-content: flex-start; padding: 0 24px; gap: 0; }
+            .header-icon { width: auto; height: 100%; border-radius: 0; padding: 0 16px; color: #5a6b7c; font-size: 12px; font-weight: 600; margin-right: 4px; border-bottom: 3px solid transparent; }
+            .header-icon svg { display: none; }
             .desktop-icon-text { display: inline; }
-            .header-icon.active { background: rgba(255,255,255,0.2); color: #ffffff; border-bottom-color: #66a3ff; }
-            .header-icon:hover { background: rgba(255,255,255,0.1); color: #ffffff; }
+            .header-icon.active { background: transparent; color: #1a73e8; border-bottom-color: #1a73e8; font-weight: 800; }
+            .header-icon:hover { background: rgba(0, 51, 102, 0.05); color: #003366; }
             
             /* Main Content scaling */
             .main-content { background: #f8f9fa; padding: 20px 32px; flex: 1; }

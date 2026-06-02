@@ -169,32 +169,36 @@
             body { background-color: #f1f3f4; }
             .app-shell { max-width: 100%; border-radius: 0; box-shadow: none; flex-direction: column; }
             
-            /* 1. Ultra Thin Header (40px, Medium Steel Blue) */
-            .app-header { order: 1; background: #99badd; border-bottom: 1px solid #7a9fcc; padding: 0 32px; height: 40px; }
-            .app-header h1 { color: #002244; font-size: 15px; letter-spacing: 0.2px; font-weight: 800; }
-            .header-icon { background: transparent; color: #003366; width: 28px; height: 28px; }
-            .header-icon:hover { background: rgba(0, 51, 102, 0.12); color: #001122; }
+            /* 1. Ultra Thin Header (40px, Dark Blue) */
+            .app-header { order: 1; background: #003366; border-bottom: none; padding: 0 32px; height: 40px; }
+            .app-header h1 { color: #ffffff; font-size: 15px; letter-spacing: 0.2px; font-weight: 800; }
+            .header-icon { background: transparent; color: #b0c4de; width: 28px; height: 28px; }
+            .header-icon:hover { background: rgba(255, 255, 255, 0.1); color: #ffffff; }
             
             #icon-calendar { width: auto; background: transparent; }
             .mobile-only-svg { display: none; }
-            .admin-date-input { position: static; opacity: 1; width: 130px; height: 26px; border: 1px solid #dadce0; border-radius: 4px; padding: 0 8px; font-family: inherit; font-size: 12px; cursor: pointer; color: var(--text-main); }
+            .admin-date-input { position: static; opacity: 1; width: 130px; height: 26px; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; padding: 0 8px; font-family: inherit; font-size: 12px; cursor: pointer; color: #ffffff; background: rgba(0,0,0,0.2); }
             
-            /* 2. Thin Tab Strip (36px, Dark Blue) */
+            /* 2. Thin Tab Strip (36px, White w/ Slight Blue) */
             .floating-nav { 
                 order: 2; position: static; transform: none; width: 100%; 
-                background: #003366; border-radius: 0; border-bottom: none; 
+                background: #f4f7fa; border-radius: 0; border-bottom: 1px solid #d2dbe3; 
                 padding: 0 24px; box-shadow: none; justify-content: flex-start; height: 36px; gap: 0;
-                transition: opacity 0.2s;
             }
             .floating-nav.hidden-down { transform: none; opacity: 1; }
             .collapse-btn, .show-nav-btn { display: none !important; }
-            .nav-item { border-radius: 0; border-bottom: 3px solid transparent; padding: 0 16px; margin-right: 4px; color: #b0c4de; }
+            .nav-item { border-radius: 0; border-bottom: 3px solid transparent; padding: 0 16px; margin-right: 4px; color: #5a6b7c; font-weight: 600; }
             .nav-item svg { display: none; } 
-            .nav-item:hover { background: rgba(255,255,255,0.1); color: #ffffff; }
-            .nav-item.active { background: rgba(255,255,255,0.2); color: #ffffff; border-bottom-color: #66a3ff; font-weight: 800; }
+            .nav-item:hover { background: rgba(0, 51, 102, 0.05); color: #003366; }
+            .nav-item.active { background: transparent; color: #1a73e8; border-bottom-color: #1a73e8; font-weight: 800; }
             .nav-item span { max-width: none; opacity: 1; margin-left: 0; font-size: 12px; }
-            .desktop-nav-logout { display: flex; margin-left: auto; align-items: center; color: #ffb3b3; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 16px; transition: background 0.2s; }
-            .desktop-nav-logout:hover { background: rgba(255,0,0,0.1); color: #ffcccc; }
+            .desktop-nav-logout { display: flex; margin-left: auto; align-items: center; color: var(--danger); font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 16px; transition: background 0.2s; }
+            .desktop-nav-logout:hover { background: #fce8e6; color: #b3261e; }
+            /* Desktop Locked/Disabled Tab Strip */
+            .floating-nav.nav-disabled { pointer-events: none; background: #e9eef2; border-bottom: 1px solid #d2dbe3; opacity: 1; filter: none; box-shadow: inset 0 2px 6px rgba(0,0,0,0.03); transition: 0.3s; }
+            .floating-nav.nav-disabled .nav-item { color: #9aa8b5; }
+            .floating-nav.nav-disabled .nav-item.active { background: transparent; border-bottom-color: #b8c6d4; color: #6b7c8e; }
+            .floating-nav.nav-disabled .desktop-nav-logout { color: #d6a4a4; }
 
             /* 3. Main Content Wrapper */
             .main-content { order: 3; padding: 20px 24px; padding-bottom: 24px; background: #f8f9fa; display: flex; flex-direction: column; overflow: hidden; }
