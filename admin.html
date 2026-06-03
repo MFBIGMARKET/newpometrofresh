@@ -301,13 +301,25 @@
             /* 7. Desktop Footer Strip (24px) */
             .desktop-system-footer { display: flex; justify-content: space-between; align-items: center; position: fixed; bottom: 0; width: 100%; height: 24px; background: #e8eaed; border-top: 1px solid #d0d0d0; padding: 0 32px; font-size: 10px; font-weight: 600; color: var(--text-muted); z-index: 50; }
         }
+
+        /* Global Loading Spinner */
+        .loader-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.85); backdrop-filter: blur(5px); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.3s; }
+        .spinner { width: 40px; height: 40px; border: 4px solid var(--primary-light); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
 <div class="app-shell">
+    <!-- GLOBAL LOADER -->
+    <div id="global-loader" class="loader-overlay hidden">
+        <div class="spinner"></div>
+        <div style="font-size: 14px; font-weight: 700; color: var(--text-main);">Syncing Database...</div>
+        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-top: 4px;">Please wait</div>
+    </div>
+
     <div id="login-screen">
-        <h1 style="color:var(--primary); font-size:24px; font-weight:800; margin-bottom:8px;">METROFRESH</h1>
+        <h1 style="color:var(--primary); font-size:24px; font-weight:800; margin-bottom:8px;">METROFRESH</h1>   
         <p style="color:var(--text-muted); font-size:14px; margin-bottom:30px; font-weight:600;">Admin Authentication</p>
         <div class="card" style="width:100%; max-width:340px; padding:24px;">
             <label style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; display:block;">Email</label>
@@ -490,7 +502,7 @@
 
         <div class="desktop-system-footer desktop-only">
             <div>Metrofresh ERP Administrator View</div>
-            <div>Database: Connected (Supabase) • Sync: Active</div>
+            <div>Database: Connected • Sync: Active</div>
         </div>
 
         <!-- ANALYTICS DETAIL PAGE (Overlay Table) -->
@@ -529,7 +541,7 @@
             </div>
             <div class="page-body">
                 <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Username</label>
-                <input type="text" id="u-name" class="input-modern" placeholder="e.g. LEKHA">
+                <input type="text" id="u-name" class="input-modern" placeholder="e.g. JOHN">
                 <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Login Password</label>
                 <input type="password" id="u-pass" class="input-modern" placeholder="Create a password">
                 <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Role</label>
@@ -538,12 +550,14 @@
                 </select>
                 <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Assign Branches</label>
                 <div class="checkbox-grid" style="margin-bottom:12px;">
-                    <label class="checkbox-item"><input type="checkbox" value="Iritty" class="branch-check"> Iritty</label>
-                    <label class="checkbox-item"><input type="checkbox" value="Mattannur" class="branch-check"> Mattannur</label>
+                    <label class="checkbox-item"><input type="checkbox" value="Iritty" class="branch-check" onchange="renderCategorySelection()"> Iritty</label>
+                    <label class="checkbox-item"><input type="checkbox" value="Mattannur" class="branch-check" onchange="renderCategorySelection()"> Mattannur</label>
                 </div>
                 <div id="wrap-cat">
-                    <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Assign Categories</label>
-                    <div id="cat-checkboxes" class="checkbox-grid" style="max-height:150px;"></div>
+                    <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Assign Categories (Per Branch)</label>
+                    <div id="cat-checkboxes" class="checkbox-grid" style="max-height:180px; display:block;">
+                        <div style="font-size:11px; color:var(--text-muted); padding:4px 0;">Select a branch first.</div>
+                    </div>
                 </div>
                 <button class="btn btn-primary" id="btn-save-user" onclick="createUser(this)" style="margin-top:16px;">Save User</button>
             </div>
@@ -778,6 +792,8 @@
     }
 
     async function loadDataFromSupabase() {
+        document.getElementById('global-loader').classList.remove('hidden'); // SHOW LOADER
+        
         const today = new Date();
         const offset = today.getTimezoneOffset() * 60000;
         const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
@@ -794,8 +810,12 @@
                 category: p.category, total: p.total_amount, actualAmount: p.actual_amount,
                 status: p.status, items: p.items, isoDate: p.iso_date, receivedDate: p.received_date
             }));
-            populateCatCheckboxes(); updateDbCounters(); refreshDashboard();
-        } catch (err) { showAlert("Error connecting to database. " + err.message); }
+            updateDbCounters(); refreshDashboard();
+        } catch (err) { 
+            showAlert("Error connecting to database. " + err.message); 
+        } finally {
+            document.getElementById('global-loader').classList.add('hidden'); // HIDE LOADER
+        }
     }
 
     function cycleBranch() {
@@ -870,7 +890,7 @@
         document.getElementById('u-name').value = ''; document.getElementById('u-name').readOnly = false;
         document.getElementById('u-pass').value = '';
         document.querySelectorAll('.branch-check').forEach(cb => cb.checked = false);
-        document.querySelectorAll('.cat-check').forEach(cb => cb.checked = false);
+        renderCategorySelection();
         document.getElementById('btn-save-user').innerText = 'Save User';
         document.getElementById('page-add-user').classList.add('active');
     }
@@ -881,35 +901,68 @@
         document.getElementById('u-name').value = u.username; document.getElementById('u-name').readOnly = true; 
         document.getElementById('u-pass').value = u.password; document.getElementById('u-role').value = u.role;
         document.getElementById('wrap-cat').style.display = (u.role === 'data-entry') ? 'none' : 'block';
+        
         document.querySelectorAll('.branch-check').forEach(cb => cb.checked = u.branches.includes(cb.value));
-        document.querySelectorAll('.cat-check').forEach(cb => cb.checked = u.categories && u.categories.includes(cb.value));
+        renderCategorySelection(); 
+        
         document.getElementById('btn-save-user').innerText = "Update User";
         document.getElementById('page-manage-users').classList.remove('active'); 
         document.getElementById('page-add-user').classList.add('active');
     }
 
-    function populateCatCheckboxes() {
-        const c = document.getElementById('cat-checkboxes'); c.innerHTML = '';
-        const cats = [...new Set(inventory.map(i => i.category).filter(Boolean))];
-        cats.forEach(cat => c.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${cat}" class="cat-check"> ${cat}</label>`);
+    function renderCategorySelection() {
+        const container = document.getElementById('cat-checkboxes'); container.innerHTML = '';
+        const checkedBranches = Array.from(document.querySelectorAll('.branch-check:checked')).map(cb => cb.value);
+        
+        if (checkedBranches.length === 0) {
+            container.innerHTML = '<div style="font-size:11px; color:var(--text-muted); padding:4px 0;">Select a branch first.</div>'; return;
+        }
+
+        checkedBranches.forEach(branch => {
+            const branchCats = [...new Set(inventory.filter(i => i.branch === branch).map(i => i.category).filter(Boolean))];
+            if (branchCats.length > 0) {
+                let html = `<div style="font-size:11px; font-weight:800; color:var(--primary); margin:12px 0 6px; text-transform:uppercase; border-bottom:1px solid var(--border); padding-bottom:4px;">${branch} Categories</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">`;
+                branchCats.forEach(cat => {
+                    let isChecked = '';
+                    if (editingUser) {
+                        const u = users.find(x => x.username === editingUser);
+                        if (u && u.categories) {
+                            if (Array.isArray(u.categories) && u.categories.includes(cat)) isChecked = 'checked'; // Legacy support
+                            else if (u.categories[branch] && u.categories[branch].includes(cat)) isChecked = 'checked';
+                        }
+                    }
+                    html += `<label class="checkbox-item"><input type="checkbox" value="${cat}" data-branch="${branch}" class="cat-check" ${isChecked}> ${cat}</label>`;
+                });
+                container.innerHTML += html + `</div>`;
+            } else {
+                container.innerHTML += `<div style="font-size:11px; font-weight:800; color:var(--text-muted); margin:12px 0 4px; text-transform:uppercase;">${branch} (No categories found)</div>`;
+            }
+        });
     }
 
     async function createUser(btn) {
         const uname = document.getElementById('u-name').value; const pass = document.getElementById('u-pass').value;
         const r = document.getElementById('u-role').value;
-        const cats = Array.from(document.querySelectorAll('.cat-check:checked')).map(cb => cb.value);
         const branches = Array.from(document.querySelectorAll('.branch-check:checked')).map(cb => cb.value);
         
         if(!uname || !pass) return showAlert("Enter a username and password");
         if(branches.length === 0) return showAlert("Select at least one branch");
         
+        // Build branch-specific category object
+        let catsObj = {};
+        if (r !== 'data-entry') {
+            branches.forEach(b => {
+                catsObj[b] = Array.from(document.querySelectorAll(`.cat-check[data-branch="${b}"]:checked`)).map(cb => cb.value);
+            });
+        }
+        
         btn.disabled = true; btn.innerText = "Saving to Cloud...";
         try {
             if(editingUser) {
-                const { error } = await supabaseClient.from('staff_users').update({ password: pass, role: r, branches: branches, categories: r==='data-entry' ? [] : cats }).eq('username', editingUser);
+                const { error } = await supabaseClient.from('staff_users').update({ password: pass, role: r, branches: branches, categories: catsObj }).eq('username', editingUser);
                 if (error) throw error;
             } else {
-                const { error } = await supabaseClient.from('staff_users').insert([{ username: uname, password: pass, role: r, branches: branches, categories: r==='data-entry' ? [] : cats }]);
+                const { error } = await supabaseClient.from('staff_users').insert([{ username: uname, password: pass, role: r, branches: branches, categories: catsObj }]);
                 if (error) throw error;
             }
             const { data: newUsers } = await supabaseClient.from('staff_users').select('*');
@@ -985,7 +1038,9 @@
                         const { error } = await supabaseClient.from('inventory').upsert(batch.slice(i, i+500), { onConflict: 'item_code, branch' });
                         if(error) throw error;
                     }
-                    inventory = await fetchAllRows('inventory'); populateCatCheckboxes(); updateDbCounters(); label.innerText = `✓ Synced ${batch.length} items`;
+                    inventory = await fetchAllRows('inventory'); 
+                    updateDbCounters(); 
+                    label.innerText = `✓ Synced ${batch.length} items`;
                 } else {
                     const batch = json.map(v => { let vName = v.name || v.name || ''; if(!vName) return null; return { name: vName, branch: branch }; }).filter(Boolean);
                     for(let i=0; i<batch.length; i+=500) {
