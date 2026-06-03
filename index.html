@@ -554,12 +554,11 @@
     window.onload = async () => {
         const savedUser = localStorage.getItem('mf_ops_user');
         if (savedUser) {
+            document.getElementById('global-loader').classList.remove('hidden'); // 1. SHOW LOADER FIRST
             currentUser = JSON.parse(savedUser);
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-app').classList.remove('hidden');
             
-            // 1. Verify User Session against DB on load
-            document.getElementById('global-loader').classList.remove('hidden');
             try {
                 const { data, error } = await supabaseClient.from('staff_users').select('*').eq('username', currentUser.username);
                 if (data && data.length === 0) {
@@ -570,30 +569,42 @@
                         alert("Your password was changed by the Administrator. Please log in again.");
                         localStorage.removeItem('mf_ops_user'); location.reload(); return;
                     }
-                    currentUser = data[0]; // Update with fresh categories/branches
+                    currentUser = data[0];
                     localStorage.setItem('mf_ops_user', JSON.stringify(currentUser));
                 }
             } catch (err) { console.log("Network offline: using cached profile."); }
 
             await loadDataFromSupabase(); 
-            setupUserUI();
-            listenForUserChanges(); // Attach instant real-time listener
+            await setupUserUI(); // Await full UI render
+            listenForUserChanges(); 
+            
+            document.getElementById('global-loader').classList.add('hidden'); // 2. HIDE LOADER LAST
         }
     };
 
     async function handleLogin(btn) {
         const uname = document.getElementById('login-user').value; const pass = document.getElementById('login-pass').value;
         if(!uname || !pass) return showAlert("Enter username and password");
+        
         btn.disabled = true; btn.innerText = "Authenticating...";
+        document.getElementById('global-loader').classList.remove('hidden'); // 1. SHOW LOADER
+        
         const { data, error } = await supabaseClient.from('staff_users').select('*').eq('username', uname).eq('password', pass);
-        if (error || !data || data.length === 0) { btn.disabled = false; btn.innerText = "Secure Login"; return showAlert("Invalid credentials"); }
+        if (error || !data || data.length === 0) { 
+            btn.disabled = false; btn.innerText = "Secure Login"; 
+            document.getElementById('global-loader').classList.add('hidden');
+            return showAlert("Invalid credentials"); 
+        }
         
         currentUser = data[0]; localStorage.setItem('mf_ops_user', JSON.stringify(currentUser));
-        document.getElementById('login-screen').classList.add('hidden'); document.getElementById('main-app').classList.remove('hidden');
+        document.getElementById('login-screen').classList.add('hidden'); 
+        document.getElementById('main-app').classList.remove('hidden');
         
         await loadDataFromSupabase(); 
-        setupUserUI();
-        listenForUserChanges(); // Attach instant real-time listener
+        await setupUserUI(); // Await full UI render
+        listenForUserChanges(); 
+        
+        document.getElementById('global-loader').classList.add('hidden'); // 2. HIDE LOADER LAST
     }
 
     // Supabase Real-time Listener (Kicks user or updates UI instantly)
@@ -632,20 +643,16 @@
     }
 
     async function loadDataFromSupabase() {
-        document.getElementById('global-loader').classList.remove('hidden'); // SHOW LOADER
-        
         const today = new Date(); const offset = today.getTimezoneOffset() * 60000;
         const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
         document.getElementById('history-date').value = localISOTime;
         
         try {
-            const [resInv, resVen, resPos] = await Promise.all([ fetchAllRows('inventory'), fetchAllRows('vendors'), fetchAllRows('purchase_orders') ]);
-            inventory = resInv; vendors = resVen;
+            const [resVen, resPos] = await Promise.all([ fetchAllRows('vendors'), fetchAllRows('purchase_orders') ]);
+            vendors = resVen;
             pos = resPos.map(p => ({ id: p.po_number, branch: p.branch, supplier: p.supplier, category: p.category, total: p.total_amount, actualAmount: p.actual_amount, status: p.status, items: p.items, isoDate: p.iso_date, receivedDate: p.received_date }));
         } catch (err) { 
             showAlert("Error connecting to database. " + err.message); 
-        } finally {
-            document.getElementById('global-loader').classList.add('hidden'); // HIDE LOADER
         }
     }
 
@@ -667,7 +674,7 @@
     }
     function resetHistoryDate() { initHistoryDate(); renderHistory(); }
 
-    function setupUserUI() {
+    async function setupUserUI() {
         if (!currentUser.branches) currentUser.branches = [currentUser.branch || 'Global'];
         currentUser.activeBranch = currentUser.branches[0];
         document.getElementById('profile-name').innerText = currentUser.username; 
@@ -680,7 +687,8 @@
             currentUser.branches.forEach(b => brSelect.add(new Option(b, b))); brSelect.value = currentUser.activeBranch;
         } else { branchContainer.classList.add('hidden'); }
 
-        prepareWorkspaceData();
+        await prepareWorkspaceData(); // Wait for data to load
+        
         document.getElementById('view-supervisor').classList.add('hidden'); document.getElementById('view-manager').classList.add('hidden'); document.getElementById('view-dataentry').classList.add('hidden');
         closeCartPage(); closePODetails(); initHistoryDate();
 
@@ -697,13 +705,18 @@
         switchTab('tab-workspace', 'Workspace', document.getElementById('nav-workspace'));
     }
 
-    function changeActiveBranch() {
-        currentUser.activeBranch = document.getElementById('active-branch-select').value; prepareWorkspaceData();
+    async function changeActiveBranch() {
+        document.getElementById('global-loader').classList.remove('hidden');
+        currentUser.activeBranch = document.getElementById('active-branch-select').value; 
+        await prepareWorkspaceData();
+        
         if(currentUser.role === 'supervisor') { activeVendor = ''; document.getElementById('vendor-search').value = ''; clearFilters(); onVendorChange(); } 
         else if(currentUser.role === 'data-entry') { activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; renderDataEntry(); } 
         else if(currentUser.role === 'manager') { renderManager(); }
+        
         const activeNav = document.querySelector('.header-icon.active');
         if(activeNav) switchTab(document.querySelector('.tab-section.active').id, activeNav.getAttribute('title'), activeNav);
+        document.getElementById('global-loader').classList.add('hidden');
     }
 
     
@@ -733,18 +746,21 @@
     
     
 
-    function prepareWorkspaceData() {
-        localInventory = inventory.filter(i => currentUser.activeBranch === 'Global' || i.branch === currentUser.activeBranch);
+    async function prepareWorkspaceData() {
         localVendors = vendors.filter(v => currentUser.activeBranch === 'Global' || (typeof v === 'object' ? v.branch === currentUser.activeBranch : true));
         
-        // Grab both dropdowns
+        // Fetch instantly from the Supabase Views (Takes < 0.1s)
+        const [ {data: catData}, {data: brandData} ] = await Promise.all([
+            supabaseClient.from('unique_categories').select('category').eq('branch', currentUser.activeBranch),
+            supabaseClient.from('unique_brands').select('brand').eq('branch', currentUser.activeBranch)
+        ]);
+        
         const cSel = document.getElementById('sheet-cat-filter'); 
         const mSel = document.getElementById('manager-category-filter');
         
         if(cSel) cSel.innerHTML = '<option value="ALL">Show All Categories</option>';
         if(mSel) mSel.innerHTML = '<option value="ALL">All Categories</option>';
         
-        // Securely map the specific branch categories
         let userCats = [];
         if (currentUser.categories && typeof currentUser.categories === 'object' && !Array.isArray(currentUser.categories)) {
             userCats = currentUser.categories[currentUser.activeBranch] || [];
@@ -752,15 +768,19 @@
             userCats = currentUser.categories;
         }
         
-        let catsToDisplay = (userCats.length === 0 || userCats.includes('ALL')) ? [...new Set(localInventory.map(i => i.category).filter(Boolean))] : userCats;
+        let allBranchCats = (catData||[]).map(i => i.category);
+        let catsToDisplay = (userCats.length === 0 || userCats.includes('ALL')) ? allBranchCats : userCats;
         
-        // Populate the dropdowns dynamically
         catsToDisplay.forEach(c => {
             if(cSel) cSel.add(new Option(c, c));
             if(mSel) mSel.add(new Option(c, c));
         });
         
-        buildBrandList();
+        // Build brand checkboxes
+        const container = document.getElementById('brand-checkboxes'); container.innerHTML = '';
+        (brandData||[]).map(i => i.brand).sort().forEach(b => {
+            container.innerHTML += `<label class="checkbox-item brand-label" style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600;"><input type="checkbox" value="${b}" class="brand-check" style="width:16px; height:16px;"> ${b}</label>`;
+        });
     }
 
     // ... (Your vendor and brand functions remain here untouched) ...
@@ -792,37 +812,58 @@
         document.getElementById('filter-dot').classList.remove('active'); renderProducts();
     }
 
-    function renderProducts() {
-        const query = document.getElementById('search-input').value.toLowerCase(); const grid = document.getElementById('product-grid'); grid.innerHTML = '';
-        const filtered = localInventory.filter(item => {
-            if(activeCategoryFilter !== 'ALL' && item.category !== activeCategoryFilter) return false;
-            if(activeBrandFilters.length > 0 && !activeBrandFilters.includes(item.brand)) return false;
-            if(query) { if(/^\d+$/.test(query)) return item.barcode === query || item.item_code === query; return item.item_name.toLowerCase().includes(query) || item.brand.toLowerCase().includes(query); }
-            return true;
-        }).slice(0, 40);
+    let searchTimeout;
+    async function renderProducts() {
+        const query = document.getElementById('search-input').value.trim(); 
+        const grid = document.getElementById('product-grid'); 
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px; color:var(--primary); font-size:13px; font-weight:700;">Searching database...</div>';
 
-        if(filtered.length === 0) return grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No items found.</p></div>';
+        // Clear timeout to prevent spamming the database while typing
+        clearTimeout(searchTimeout);
+        
+        searchTimeout = setTimeout(async () => {
+            let req = supabaseClient.from('inventory').select('*').eq('branch', currentUser.activeBranch).limit(40);
+            
+            if (activeCategoryFilter !== 'ALL') req = req.eq('category', activeCategoryFilter);
+            if (activeBrandFilters.length > 0) req = req.in('brand', activeBrandFilters);
+            
+            if (query) {
+                if (/^\d+$/.test(query)) {
+                    req = req.or(`barcode.eq.${query},item_code.eq.${query}`);
+                } else {
+                    req = req.ilike('item_name', `%${query}%`);
+                }
+            }
 
-        filtered.forEach(item => {
-            grid.innerHTML += `
-                <div class="card" style="margin-bottom:0; padding:14px; display:flex; flex-direction:column; gap:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                        <div>
-                            <div style="font-size:14px; font-weight:700; line-height:1.3; color:var(--text-main);">${item.item_name}</div>
-                            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${item.item_code} • ${item.brand || 'Unbranded'}</div>
+            const { data, error } = await req;
+            if (error) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger);">Error loading items.</div>'; return; }
+            
+            localInventory = data || []; // Save ONLY these 40 items locally so the Cart code works instantly
+            grid.innerHTML = '';
+
+            if(localInventory.length === 0) return grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No items found.</p></div>';
+
+            localInventory.forEach(item => {
+                grid.innerHTML += `
+                    <div class="card" style="margin-bottom:0; padding:14px; display:flex; flex-direction:column; gap:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                            <div>
+                                <div style="font-size:14px; font-weight:700; line-height:1.3; color:var(--text-main);">${item.item_name}</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${item.item_code} • ${item.brand || 'Unbranded'}</div>
+                            </div>
+                            <div style="font-size:12px; font-weight:800; color:var(--primary); background:var(--primary-light); padding:4px 8px; border-radius:6px; white-space:nowrap; height:fit-content;">MRP: ${fmt(item.mrp)}</div>
                         </div>
-                        <div style="font-size:12px; font-weight:800; color:var(--primary); background:var(--primary-light); padding:4px 8px; border-radius:6px; white-space:nowrap; height:fit-content;">MRP: ${fmt(item.mrp)}</div>
-                    </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <div style="flex:1; background:#f8f9fa; border:1px dashed #bdc1c6; border-radius:8px; height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 10px;" title="Suggested quantity based on sales data">
-                            <span style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Suggest</span>
-                            <span style="font-size:14px; font-weight:800; color:var(--text-muted);">--</span>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <div style="flex:1; background:#f8f9fa; border:1px dashed #bdc1c6; border-radius:8px; height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 10px;" title="Suggested quantity based on sales data">
+                                <span style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Suggest</span>
+                                <span style="font-size:14px; font-weight:800; color:var(--text-muted);">--</span>
+                            </div>
+                            <input type="number" id="qty-${item.item_code}" value="1" min="1" style="width:60px; height:38px; border:1px solid var(--border); border-radius:8px; text-align:center; font-size:14px; font-weight:700; background:var(--surface); outline:none; margin:0; padding:0;">
+                            <button class="btn btn-primary" style="height:38px; padding:0 20px; font-size:13px; width:auto; margin:0;" onclick="addToCart('${item.item_code}', this)">Add</button>
                         </div>
-                        <input type="number" id="qty-${item.item_code}" value="1" min="1" style="width:60px; height:38px; border:1px solid var(--border); border-radius:8px; text-align:center; font-size:14px; font-weight:700; background:var(--surface); outline:none; margin:0; padding:0;">
-                        <button class="btn btn-primary" style="height:38px; padding:0 20px; font-size:13px; width:auto; margin:0;" onclick="addToCart('${item.item_code}', this)">Add</button>
-                    </div>
-                </div>`;
-        });
+                    </div>`;
+            });
+        }, 300); // 300ms debounce
     }
 
     function addToCart(code, btn) {

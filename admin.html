@@ -767,12 +767,13 @@
         location.reload();
     }
 
-    async function fetchAllRows(tableName) {
+    async function fetchAllRows(tableName, selectQuery = '*') {
         let allData = []; let limit = 1000; let start = 0; let hasMore = true;
         while (hasMore) {
-            const { data, error } = await supabaseClient.from(tableName).select('*').range(start, start + limit - 1);
+            const { data, error } = await supabaseClient.from(tableName).select(selectQuery).range(start, start + limit - 1);
             if (error) throw error;
-            if (data.length > 0) { allData = allData.concat(data); start += limit; } else { hasMore = false; }
+            if (data && data.length > 0) { allData = allData.concat(data); start += limit; }
+            if (!data || data.length < limit) { hasMore = false; } // Stop immediately if end reached
         }
         return allData;
     }
@@ -801,10 +802,12 @@
         globalToDate = localISOTime;
 
         try {
-            const [resInv, resVen, resUsr, resPos] = await Promise.all([
-                fetchAllRows('inventory'), fetchAllRows('vendors'), fetchAllRows('staff_users'), fetchAllRows('purchase_orders')
+            // Fetch instantly from the Supabase View (Takes < 0.1s)
+            const [resCat, resVen, resUsr, resPos] = await Promise.all([
+                supabaseClient.from('unique_categories').select('*'), 
+                fetchAllRows('vendors'), fetchAllRows('staff_users'), fetchAllRows('purchase_orders')
             ]);
-            inventory = resInv; vendors = resVen; users = resUsr;
+            inventory = resCat.data || []; vendors = resVen; users = resUsr;
             pos = resPos.map(p => ({
                 id: p.po_number, branch: p.branch, supplier: p.supplier,
                 category: p.category, total: p.total_amount, actualAmount: p.actual_amount,
@@ -919,6 +922,7 @@
         }
 
         checkedBranches.forEach(branch => {
+            // Pulls instantly from the Lite inventory in memory
             const branchCats = [...new Set(inventory.filter(i => i.branch === branch).map(i => i.category).filter(Boolean))];
             if (branchCats.length > 0) {
                 let html = `<div style="font-size:11px; font-weight:800; color:var(--primary); margin:12px 0 6px; text-transform:uppercase; border-bottom:1px solid var(--border); padding-bottom:4px;">${branch} Categories</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">`;
@@ -927,7 +931,7 @@
                     if (editingUser) {
                         const u = users.find(x => x.username === editingUser);
                         if (u && u.categories) {
-                            if (Array.isArray(u.categories) && u.categories.includes(cat)) isChecked = 'checked'; // Legacy support
+                            if (Array.isArray(u.categories) && u.categories.includes(cat)) isChecked = 'checked'; 
                             else if (u.categories[branch] && u.categories[branch].includes(cat)) isChecked = 'checked';
                         }
                     }
@@ -1000,9 +1004,10 @@
         });
     }
 
-    function updateDbCounters() {
+    async function updateDbCounters() {
         const branch = document.getElementById('upload-branch').value;
-        document.getElementById('db-inv-count').innerText = `Total in DB: ${inventory.filter(i => i.branch === branch).length} items`;
+        const { count: invCount } = await supabaseClient.from('inventory').select('*', { count: 'exact', head: true }).eq('branch', branch);
+        document.getElementById('db-inv-count').innerText = `Total in DB: ${invCount || 0} items`;
         document.getElementById('db-ven-count').innerText = `Total in DB: ${vendors.filter(v => v.branch === branch).length} vendors`;
     }
 
@@ -1038,7 +1043,7 @@
                         const { error } = await supabaseClient.from('inventory').upsert(batch.slice(i, i+500), { onConflict: 'item_code, branch' });
                         if(error) throw error;
                     }
-                    inventory = await fetchAllRows('inventory'); 
+                    
                     updateDbCounters(); 
                     label.innerText = `✓ Synced ${batch.length} items`;
                 } else {
