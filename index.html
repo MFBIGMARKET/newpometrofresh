@@ -756,9 +756,13 @@
         });
     }
 
+    let brandSearchTimeout;
     function filterBrandList() {
-        const query = document.getElementById('brand-search-input').value.toLowerCase();
-        document.querySelectorAll('.brand-label').forEach(label => { label.style.display = label.innerText.toLowerCase().includes(query) ? 'flex' : 'none'; });
+        clearTimeout(brandSearchTimeout);
+        brandSearchTimeout = setTimeout(() => {
+            const query = document.getElementById('brand-search-input').value.toLowerCase();
+            document.querySelectorAll('.brand-label').forEach(label => { label.style.display = label.innerText.toLowerCase().includes(query) ? 'flex' : 'none'; });
+        }, 150); // 150ms delay to stop keyboard lag
     }
     
     
@@ -785,13 +789,18 @@
             userCats = currentUser.categories;
         }
         
-        let allBranchCats = (catData||[]).map(i => i.category);
-        let catsToDisplay = (userCats.length === 0 || userCats.includes('ALL')) ? allBranchCats : userCats;
-        
-        catsToDisplay.forEach(c => {
+        // Populate with ALL available categories for the branch
+        let allBranchCats = (catData||[]).map(i => i.category).filter(Boolean);
+        allBranchCats.forEach(c => {
             if(cSel) cSel.add(new Option(c, c));
             if(mSel) mSel.add(new Option(c, c));
         });
+
+        // Automatically select the assigned category as the default
+        const defaultCat = (userCats.length > 0 && !userCats.includes('ALL')) ? userCats[0] : 'ALL';
+        if(cSel) cSel.value = defaultCat;
+        if(mSel) mSel.value = defaultCat;
+        activeCategoryFilter = defaultCat; 
         
         // Build brand checkboxes
         const container = document.getElementById('brand-checkboxes'); container.innerHTML = '';
@@ -807,9 +816,9 @@
         activeBrandFilters = Array.from(document.querySelectorAll('.brand-check:checked')).map(cb => cb.value);
         
         let userCats = [];
-        if (currentUser.categories && !Array.isArray(currentUser.categories)) userCats = currentUser.categories[currentUser.activeBranch] || [];
+        if (currentUser.categories && typeof currentUser.categories === 'object' && !Array.isArray(currentUser.categories)) userCats = currentUser.categories[currentUser.activeBranch] || [];
         else userCats = currentUser.categories || [];
-        const defaultCat = userCats.length > 0 ? userCats[0] : 'ALL';
+        const defaultCat = (userCats.length > 0 && !userCats.includes('ALL')) ? userCats[0] : 'ALL';
         
         const dot = document.getElementById('filter-dot'); 
         if(activeBrandFilters.length > 0 || activeCategoryFilter !== defaultCat) dot.classList.add('active'); else dot.classList.remove('active');
@@ -821,10 +830,10 @@
         document.querySelectorAll('.brand-check').forEach(cb => cb.checked = false); filterBrandList(); 
         
         let userCats = [];
-        if (currentUser.categories && !Array.isArray(currentUser.categories)) userCats = currentUser.categories[currentUser.activeBranch] || [];
+        if (currentUser.categories && typeof currentUser.categories === 'object' && !Array.isArray(currentUser.categories)) userCats = currentUser.categories[currentUser.activeBranch] || [];
         else userCats = currentUser.categories || [];
         
-        activeCategoryFilter = userCats.length > 0 ? userCats[0] : 'ALL';
+        activeCategoryFilter = (userCats.length > 0 && !userCats.includes('ALL')) ? userCats[0] : 'ALL';
         document.getElementById('sheet-cat-filter').value = activeCategoryFilter;
         document.getElementById('filter-dot').classList.remove('active'); renderProducts();
     }
