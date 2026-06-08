@@ -946,7 +946,14 @@
     }
 
     function openCartPage() { document.getElementById('view-cart-page').classList.remove('hidden'); renderCart(); }
-    function closeCartPage() { document.getElementById('view-cart-page').classList.add('hidden'); }
+    function closeCartPage() { 
+        document.getElementById('view-cart-page').classList.add('hidden'); 
+        if (currentUser && currentUser.role === 'manager') {
+            document.getElementById('view-supervisor').classList.add('hidden');
+            document.getElementById('view-manager').classList.remove('hidden');
+            renderManager();
+        }
+    }
 
     function renderCart() {
         const cont = document.getElementById('cart-items-container'); document.getElementById('cart-vendor-label').innerText = activeVendor || `None`;
@@ -976,7 +983,16 @@
 
     function removeFromCart(cartKey, idx) { savedCarts[cartKey].splice(idx, 1); localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); }
     function updateCartQty(cartKey, idx, change) { savedCarts[cartKey][idx].qty += change; if(savedCarts[cartKey][idx].qty <= 0) savedCarts[cartKey].splice(idx, 1); localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); }
-    function clearCart() { const cartKey = `${currentUser.activeBranch}_${activeVendor}`; if(savedCarts[cartKey]) { delete savedCarts[cartKey]; localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); } }
+    function clearCart() { 
+        const cartKey = `${currentUser.activeBranch}_${activeVendor}`; 
+        if(savedCarts[cartKey]) { 
+            delete savedCarts[cartKey]; 
+            localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); 
+            window.editingPoId = null;
+            updateCartBadge(); 
+            renderCart(); 
+        } 
+    }
 
     async function submitPO(btnElement) {
         const cartKey = `${currentUser.activeBranch}_${activeVendor}`;
@@ -984,24 +1000,43 @@
         btnElement.disabled = true; btnElement.innerText = "Submitting to Cloud...";
         const cartData = savedCarts[cartKey]; const today = new Date(); const offset = today.getTimezoneOffset() * 60000;
         const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
-        const poNumber = 'PO-' + Math.floor(1000 + Math.random() * 9000);
+        
+        let poNumber = window.editingPoId;
+        if (!poNumber) {
+            const catName = cartData[0].category || "XX";
+            const prefix = "PO" + catName.substring(0, 2).toUpperCase() + "-";
+            let maxNum = 999;
+            pos.forEach(p => {
+                if (p.id && p.id.startsWith(prefix)) {
+                    const numPart = parseInt(p.id.replace(prefix, ''), 10);
+                    if (!isNaN(numPart) && numPart > maxNum) maxNum = numPart;
+                }
+            });
+            poNumber = prefix + (maxNum + 1);
+        }
+
         const totalAmt = cartData.reduce((sum, i) => sum + (i.cost * i.qty), 0);
         
         const branchAutoList = appSettings.auto_approve_categories[currentUser.activeBranch] || [];
-        
-        // If it's a manager submitting, it is ALWAYS Approved instantly.
         const isAutoApproved = branchAutoList.includes(cartData[0].category) || currentUser.role === 'manager';
         const finalStatus = isAutoApproved ? 'Approved' : 'Pending';
 
         try {
-            const { error } = await supabaseClient.from('purchase_orders').insert([{ po_number: poNumber, branch: currentUser.activeBranch, supplier: activeVendor, category: cartData[0].category, total_amount: totalAmt, status: finalStatus, iso_date: localISOTime, items: cartData, created_by: currentUser.username }]);
-            if (error) throw error;
-            
-            pos.unshift({ id: poNumber, branch: currentUser.activeBranch, supplier: activeVendor, category: cartData[0].category, total: totalAmt, status: finalStatus, isoDate: localISOTime, items: cartData, createdBy: currentUser.username });
+            if (window.editingPoId) {
+                const { error } = await supabaseClient.from('purchase_orders').update({ total_amount: totalAmt, status: finalStatus, iso_date: localISOTime, items: cartData }).eq('po_number', poNumber);
+                if (error) throw error;
+                const pIdx = pos.findIndex(p => p.id === poNumber);
+                if(pIdx > -1) { pos[pIdx].total = totalAmt; pos[pIdx].status = finalStatus; pos[pIdx].isoDate = localISOTime; pos[pIdx].items = cartData; }
+                window.editingPoId = null;
+            } else {
+                const { error } = await supabaseClient.from('purchase_orders').insert([{ po_number: poNumber, branch: currentUser.activeBranch, supplier: activeVendor, category: cartData[0].category, total_amount: totalAmt, status: finalStatus, iso_date: localISOTime, items: cartData, created_by: currentUser.username }]);
+                if (error) throw error;
+                pos.unshift({ id: poNumber, branch: currentUser.activeBranch, supplier: activeVendor, category: cartData[0].category, total: totalAmt, status: finalStatus, isoDate: localISOTime, items: cartData, createdBy: currentUser.username });
+            }
+
             delete savedCarts[cartKey]; localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts));
             updateCartBadge(); closeCartPage(); 
             
-            // Send Managers back to Manager View after Editing/Submitting
             if (currentUser.role === 'manager') {
                 document.getElementById('view-manager').classList.remove('hidden');
                 document.getElementById('view-supervisor').classList.add('hidden');
@@ -1370,30 +1405,25 @@
     }
 
     function editPO(poId, btn) {
-        showConfirm("Pull order into cart to edit? This removes it from Pending.", async () => {
-            btn.disabled = true; btn.innerText = "Moving...";
-            try {
-                const { error } = await supabaseClient.from('purchase_orders').delete().eq('po_number', poId);
-                if(error) throw error;
-                
-                const idx = pos.findIndex(p => p.id === poId); if(idx === -1) return;
-                const poToEdit = pos[idx]; const cartKey = `${currentUser.activeBranch}_${poToEdit.supplier}`;
-                
-                if(!savedCarts[cartKey]) savedCarts[cartKey] = [];
-                poToEdit.items.forEach(it => { const ex = savedCarts[cartKey].find(c => c.itemCode === it.itemCode); if(ex) ex.qty += it.qty; else savedCarts[cartKey].push(it); });
-                localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); pos.splice(idx, 1);
-                
-                activeVendor = poToEdit.supplier; document.getElementById('vendor-search').value = activeVendor;
-                closePODetails(); switchTab('tab-workspace', 'Workspace', document.getElementById('nav-workspace')); 
-                
-                // If Manager is editing, temporarily open Supervisor Cart UI for them
-                if (currentUser.role === 'manager') {
-                    document.getElementById('view-manager').classList.add('hidden');
-                    document.getElementById('view-supervisor').classList.remove('hidden');
-                }
-                
-                updateCartBadge(); openCartPage();
-            } catch (err) { btn.disabled = false; btn.innerText = "✏️ Edit"; showAlert("Error pulling order: " + err.message); }
+        showConfirm("Pull order into cart to edit?", async () => {
+            const idx = pos.findIndex(p => p.id === poId); if(idx === -1) return;
+            const poToEdit = pos[idx]; const cartKey = `${currentUser.activeBranch}_${poToEdit.supplier}`;
+            
+            window.editingPoId = poId;
+
+            savedCarts[cartKey] = []; 
+            poToEdit.items.forEach(it => savedCarts[cartKey].push(it));
+            localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); 
+            
+            activeVendor = poToEdit.supplier; document.getElementById('vendor-search').value = activeVendor;
+            closePODetails(); switchTab('tab-workspace', 'Workspace', document.getElementById('nav-workspace')); 
+            
+            if (currentUser.role === 'manager') {
+                document.getElementById('view-manager').classList.add('hidden');
+                document.getElementById('view-supervisor').classList.remove('hidden');
+            }
+            
+            updateCartBadge(); openCartPage();
         });
     }
 </script>
