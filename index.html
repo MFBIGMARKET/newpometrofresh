@@ -526,7 +526,7 @@
     const supabaseClient = windowSupabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const KEY_CRT = 'mf_carts';
-    let inventory = []; let vendors = []; let pos = [];
+    let inventory = []; let vendors = []; let pos = []; let sales = [];
     let savedCarts = JSON.parse(localStorage.getItem(KEY_CRT)) || {};
 
     let currentUser = null; let activeDeVendor = '';
@@ -800,11 +800,21 @@
     async function prepareWorkspaceData() {
         localVendors = vendors.filter(v => currentUser.activeBranch === 'Global' || (typeof v === 'object' ? v.branch === currentUser.activeBranch : true));
         
+        const d = new Date();
+        const twoWeeksStr = new Date(d.getTime() - d.getTimezoneOffset()*60000 - (14*86400000)).toISOString().split('T')[0];
+
         // Fetch instantly from the Supabase Views (Takes < 0.1s)
         const [ {data: catData}, {data: brandData} ] = await Promise.all([
             supabaseClient.from('unique_categories').select('category').eq('branch', currentUser.activeBranch),
             supabaseClient.from('unique_brands').select('brand').eq('branch', currentUser.activeBranch)
         ]);
+
+        // Fetch last 14 days of Sales
+        sales = []; let limit = 1000; let start = 0; let hasMore = true;
+        while(hasMore) {
+            const {data} = await supabaseClient.from('sales_data').select('item_code, quantity').eq('branch', currentUser.activeBranch).gte('transaction_date', twoWeeksStr).range(start, start + limit - 1);
+            if(data && data.length > 0) { sales = sales.concat(data); start += limit; } else { hasMore = false; }
+        }
         
         const cSel = document.getElementById('sheet-cat-filter'); 
         const mBox = document.getElementById('manager-category-checkboxes');
@@ -874,15 +884,17 @@
 
     let searchTimeout;
     async function renderProducts() {
-        const query = document.getElementById('search-input').value.trim(); 
+        const rawQuery = document.getElementById('search-input').value; 
+        const isGlobalSearch = rawQuery.startsWith(' '); // Space at the beginning means global search
+        const query = rawQuery.trim(); // Now trim it for processing
+        
         const grid = document.getElementById('product-grid'); 
         grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px; color:var(--primary); font-size:13px; font-weight:700;">Searching database...</div>';
 
-        // Clear timeout to prevent spamming the database while typing
         clearTimeout(searchTimeout);
         
         searchTimeout = setTimeout(async () => {
-            let req = supabaseClient.from('inventory').select('*').eq('branch', currentUser.activeBranch).limit(40);
+            let req = supabaseClient.from('inventory').select('*').eq('branch', currentUser.activeBranch);
             
             if (activeCategoryFilter !== 'ALL') req = req.eq('category', activeCategoryFilter);
             if (activeBrandFilters.length > 0) req = req.in('brand', activeBrandFilters);
@@ -891,21 +903,51 @@
                 if (/^\d+$/.test(query)) {
                     req = req.or(`barcode.eq.${query},item_code.eq.${query}`);
                 } else {
-                    req = req.ilike('item_name', `%${query}%`);
+                    // Multi-word search using +
+                    const terms = query.split('+').map(t => t.trim()).filter(Boolean);
+                    
+                    if (terms.length > 0) {
+                        // First term determines StartsWith vs Global
+                        let firstTermMatch = isGlobalSearch ? `%${terms[0]}%` : `${terms[0]}%`;
+                        req = req.ilike('item_name', firstTermMatch);
+                        
+                        // Subsequent terms are always Global AND matches
+                        for (let i = 1; i < terms.length; i++) {
+                            req = req.ilike('item_name', `%${terms[i]}%`);
+                        }
+                    }
                 }
+            } else {
+                // If query is empty, limit to 40 so the app doesn't crash loading the entire DB on boot
+                req = req.limit(40);
             }
 
             const { data, error } = await req;
             if (error) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger);">Error loading items.</div>'; return; }
             
-            localInventory = data || []; // Save ONLY these 40 items locally so the Cart code works instantly
+            localInventory = data || []; 
             grid.innerHTML = '';
 
             if(localInventory.length === 0) return grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No items found.</p></div>';
 
+            // --- SUGGESTION CALCULATION (Last 14 days based on Sales Data) ---
+            const suggestionMap = {};
+            sales.forEach(s => {
+                if (!suggestionMap[s.item_code]) suggestionMap[s.item_code] = 0;
+                suggestionMap[s.item_code] += s.quantity;
+            });
+            // ----------------------------------------------------------------
+
+            const cartKey = `${currentUser.activeBranch}_${activeVendor}`;
+
             localInventory.forEach(item => {
+                const suggestedQty = suggestionMap[item.item_code] || 0;
+                const inCartItem = (activeVendor && savedCarts[cartKey]) ? savedCarts[cartKey].find(c => c.itemCode === item.item_code) : null;
+                
+                const cardStyle = inCartItem ? 'border: 2px solid var(--primary); background: #f4f8fe;' : 'border: 1px solid var(--border); background: var(--surface-solid);';
+                
                 grid.innerHTML += `
-                    <div class="card" style="margin-bottom:0; padding:14px; display:flex; flex-direction:column; gap:12px;">
+                    <div class="card" style="margin-bottom:0; padding:14px; display:flex; flex-direction:column; gap:12px; ${cardStyle}">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                             <div>
                                 <div style="font-size:14px; font-weight:700; line-height:1.3; color:var(--text-main);">${item.item_name}</div>
@@ -914,9 +956,9 @@
                             <div style="font-size:12px; font-weight:800; color:var(--primary); background:var(--primary-light); padding:4px 8px; border-radius:6px; white-space:nowrap; height:fit-content;">MRP: ${fmt(item.mrp)}</div>
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <div style="flex:1; background:#f8f9fa; border:1px dashed #bdc1c6; border-radius:8px; height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 10px;" title="Suggested quantity based on sales data">
-                                <span style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Suggest</span>
-                                <span style="font-size:14px; font-weight:800; color:var(--text-muted);">--</span>
+                            <div style="flex:1; background:#f8f9fa; border:1px dashed #bdc1c6; border-radius:8px; height:38px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 4px;" title="Past 14 days total sold">
+                                <span style="font-size:9px; font-weight:800; color:var(--text-muted); text-transform:uppercase; line-height:1;">14D SALE</span>
+                                <span style="font-size:13px; font-weight:800; color:var(--primary); line-height:1.2; margin-top:3px;">${suggestedQty > 0 ? Math.round(suggestedQty) : '--'}</span>
                             </div>
                             <input type="number" id="qty-${item.item_code}" value="1" min="1" style="width:60px; height:38px; border:1px solid var(--border); border-radius:8px; text-align:center; font-size:14px; font-weight:700; background:var(--surface); outline:none; margin:0; padding:0;">
                             <button class="btn btn-primary" style="height:38px; padding:0 20px; font-size:13px; width:auto; margin:0;" onclick="addToCart('${item.item_code}', this)">Add</button>
@@ -936,6 +978,14 @@
         const existing = savedCarts[cartKey].find(c => c.itemCode === code);
         if(existing) existing.qty += qty; else savedCarts[cartKey].push({ itemCode: item.item_code, name: item.item_name, category: item.category, brand: item.brand, cost: item.cost, mrp: item.mrp, qty: qty });
         localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge();
+        
+        // Live UI update for the grid card
+        const card = btn.closest('.card');
+        if (card) {
+            card.style.border = "2px solid var(--primary)";
+            card.style.background = "#f4f8fe";
+        }
+
         btn.innerText = "✓"; btn.style.background = "var(--success)"; setTimeout(() => { btn.innerText = "Add"; btn.style.background = "var(--primary)"; qtyInput.value = "1"; }, 800);
     }
 
@@ -981,7 +1031,7 @@
         document.getElementById('cart-total').innerText = fmt(tot);
     }
 
-    function removeFromCart(cartKey, idx) { savedCarts[cartKey].splice(idx, 1); localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); }
+    function removeFromCart(cartKey, idx) { savedCarts[cartKey].splice(idx, 1); localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); renderProducts(); }
     function updateCartQty(cartKey, idx, change) { savedCarts[cartKey][idx].qty += change; if(savedCarts[cartKey][idx].qty <= 0) savedCarts[cartKey].splice(idx, 1); localStorage.setItem(KEY_CRT, JSON.stringify(savedCarts)); updateCartBadge(); renderCart(); }
     function clearCart() { 
         const cartKey = `${currentUser.activeBranch}_${activeVendor}`; 
@@ -991,6 +1041,7 @@
             window.editingPoId = null;
             updateCartBadge(); 
             renderCart(); 
+            renderProducts(); // Refresh the grid to remove blue borders
         } 
     }
 
@@ -1237,7 +1288,6 @@
         const list = document.getElementById('history-list'); const dateFilter = document.getElementById('history-date').value; list.innerHTML = '';
         let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
         
-        // Supervisors only see their own POs. Managers/Data Entry see all for the branch.
         if (currentUser.role === 'supervisor') {
             filtered = filtered.filter(p => p.createdBy === currentUser.username);
         }
@@ -1257,26 +1307,6 @@
                 <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
         });
     }
-
-    const footer = document.getElementById('detail-footer'); footer.innerHTML = '';
-        if (currentUser.role === 'supervisor') {
-            if (po.status === 'Pending') footer.innerHTML = `<button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width:100%;" onclick="editPO('${po.id}', this)">✏️ Edit Order</button>`;
-            else footer.innerHTML = `<button class="btn btn-primary" onclick="pdf('${po.id}')" style="width:100%;">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'manager') {
-            if (po.status === 'Pending') {
-                footer.innerHTML = `
-                    <button class="btn btn-outline" style="flex:1; border-color:var(--primary); color:var(--primary);" onclick="editPO('${po.id}', this)">✏️ Edit</button>
-                    <button class="btn btn-primary" style="flex:2;" onclick="approve('${po.id}', this)">Approve</button>
-                `;
-            } else footer.innerHTML = `<button class="btn btn-outline" style="width:100%;" onclick="pdf('${po.id}')">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'data-entry') {
-            if (po.status === 'Approved') footer.innerHTML = `<button class="btn btn-success" style="width:100%;" onclick="receivePrompt('${po.id}', this, true)">Confirm Receipt</button>`;
-            else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
-        }
-        document.getElementById('view-po-details').classList.add('active');
-    }
-
-
 
     function openPODetails(poId) {
         const po = pos.find(p => p.id === poId); if(!po) return;
@@ -1311,7 +1341,7 @@
             else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
         }
         document.getElementById('view-po-details').classList.add('active');
-    }
+    }}
 
     function closePODetails() { document.getElementById('view-po-details').classList.remove('active'); }
     function applyManagerFilters() {
@@ -1445,6 +1475,115 @@
             pagebreak: { mode: 'css' }
         }).from(htmlContent).save();
     }
+
+    function handleDeVendorSearch() {
+        const query = document.getElementById('de-vendor-search').value.toLowerCase(); const dd = document.getElementById('de-vendor-dropdown'); dd.innerHTML = '';
+        const uniqueSuppliers = [...new Set(pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved').map(p => p.supplier))];
+        const filtered = uniqueSuppliers.filter(v => v.toLowerCase().includes(query));
+        if(filtered.length === 0) dd.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted); cursor:default;">No pending vendors</div>';
+        else filtered.forEach(v => { dd.innerHTML += `<div class="autocomplete-item" onclick="selectDeVendor('${v}')">${v}</div>`; });
+        dd.classList.remove('hidden');
+    }
+    function showDeVendorDropdown() { handleDeVendorSearch(); }
+    function selectDeVendor(v) { activeDeVendor = v; document.getElementById('de-vendor-search').value = v; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
+
+    function renderDataEntry() {
+        const list = document.getElementById('de-list'); list.innerHTML = '';
+        if (!activeDeVendor) return list.innerHTML = '<div class="empty-state" style="padding-top:20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">Search a supplier to view their pending deliveries.</p></div>';
+        const valid = pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved' && p.supplier === activeDeVendor);
+        if(valid.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No pending deliveries for this supplier.</p></div>';
+        valid.forEach((po) => {
+            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
+                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id}</div></div><div class="po-tag tag-approved">Pending</div></div>
+                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">Receive →</div></div></div>`;
+        });
+    }
+
+    function receivePrompt(poId, btnElement, isFromDetailsPage) {
+        const po = pos.find(p => p.id === poId);
+        showPrompt("Confirm Receipt", `Enter actual invoice amount for ${po.id}:`, po.total, async (val) => {
+            btnElement.disabled = true; btnElement.innerText = "Processing...";
+            try {
+                const today = new Date(); const offset = today.getTimezoneOffset() * 60000; const recDate = (new Date(today - offset)).toISOString().split('T')[0];
+                const { error } = await supabaseClient.from('purchase_orders').update({ status: 'Received', actual_amount: val, received_date: recDate }).eq('po_number', po.id);
+                if (error) throw error;
+                const pIdx = pos.findIndex(p => p.id === po.id); pos[pIdx].status = 'Received'; pos[pIdx].actualAmount = val; pos[pIdx].receivedDate = recDate;
+                if(isFromDetailsPage) openPODetails(po.id); renderDataEntry();
+            } catch (err) { btnElement.disabled = false; btnElement.innerText = "Confirm Receipt"; showAlert("Error: " + err.message); }
+        });
+    }
+
+    function editReceivedAmount(poId) {
+        const pIdx = pos.findIndex(p => p.id === poId); const po = pos[pIdx];
+        showPrompt("Edit Received Amount", `Update invoice amount for ${po.id}:`, po.actualAmount, async (val) => {
+            try {
+                const { error } = await supabaseClient.from('purchase_orders').update({ actual_amount: val }).eq('po_number', po.id);
+                if (error) throw error;
+                pos[pIdx].actualAmount = val; renderHistory();
+            } catch (err) { showAlert("Error: " + err.message); }
+        });
+    }
+
+    function renderHistory() {
+        const list = document.getElementById('history-list'); const dateFilter = document.getElementById('history-date').value; list.innerHTML = '';
+        let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
+        
+        if (currentUser.role === 'supervisor') {
+            filtered = filtered.filter(p => p.createdBy === currentUser.username);
+        }
+        
+        if (dateFilter) filtered = filtered.filter(p => p.isoDate === dateFilter);
+        document.getElementById('history-total-kpi').innerText = fmt(filtered.reduce((sum, po) => sum + (po.total || 0), 0));
+        if(filtered.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No history found for this date.</p></div>';
+
+        filtered.forEach((po) => {
+            const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
+            let extraDataEntryBtn = '';
+            if(currentUser.role === 'data-entry' && po.status === 'Received') {
+                extraDataEntryBtn = `<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary);" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
+            }
+            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
+                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
+                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
+        });
+    }
+
+    function openPODetails(poId) {
+        const po = pos.find(p => p.id === poId); if(!po) return;
+        document.getElementById('detail-supplier').innerText = po.supplier;
+        document.getElementById('detail-meta').innerText = `${po.id} • ${po.isoDate ? fmtDate(po.isoDate) : ''} • ${po.branch}`;
+        const statEl = document.getElementById('detail-status'); statEl.innerText = po.status;
+        statEl.style.background = po.status === 'Approved' ? '#e6f4ea' : (po.status === 'Received' ? '#e8f0fe' : '#fce8e6');
+        statEl.style.color = po.status === 'Approved' ? 'var(--success)' : (po.status === 'Received' ? 'var(--primary)' : 'var(--danger)');
+
+        const cont = document.getElementById('detail-items-container');
+        if (currentUser.role === 'manager') {
+            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:right;">${fmt(it.cost)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td><td style="text-align:right; color:var(--primary); font-weight:800;">${fmt(it.cost * it.qty)}</td></tr>`).join('');
+            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:right;">Cost</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Total</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
+        } else {
+            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td></tr>`).join('');
+            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:center;">Qty</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
+        }
+
+        const footer = document.getElementById('detail-footer'); footer.innerHTML = '';
+        if (currentUser.role === 'supervisor') {
+            if (po.status === 'Pending') footer.innerHTML = `<button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width:100%;" onclick="editPO('${po.id}', this)">✏️ Edit Order</button>`;
+            else footer.innerHTML = `<button class="btn btn-primary" onclick="pdf('${po.id}')" style="width:100%;">📄 Download PDF</button>`;
+        } else if (currentUser.role === 'manager') {
+            if (po.status === 'Pending') {
+                footer.innerHTML = `
+                    <button class="btn btn-outline" style="flex:1; border-color:var(--primary); color:var(--primary);" onclick="editPO('${po.id}', this)">✏️ Edit</button>
+                    <button class="btn btn-primary" style="flex:2;" onclick="approve('${po.id}', this)">Approve</button>
+                `;
+            } else footer.innerHTML = `<button class="btn btn-outline" style="width:100%;" onclick="pdf('${po.id}')">📄 Download PDF</button>`;
+        } else if (currentUser.role === 'data-entry') {
+            if (po.status === 'Approved') footer.innerHTML = `<button class="btn btn-success" style="width:100%;" onclick="receivePrompt('${po.id}', this, true)">Confirm Receipt</button>`;
+            else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
+        }
+        document.getElementById('view-po-details').classList.add('active');
+    }
+
+    function closePODetails() { document.getElementById('view-po-details').classList.remove('active'); }
 
     function editPO(poId, btn) {
         showConfirm("Pull order into cart to edit?", async () => {
