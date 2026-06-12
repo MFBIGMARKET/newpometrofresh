@@ -341,7 +341,8 @@
                 <!-- 1C. DATA ENTRY VIEW -->
                 <div id="view-dataentry" class="hidden section-padded">
                     <div class="search-box" style="margin-bottom: 16px;">
-                        <input type="text" id="de-vendor-search" class="input-modern" placeholder="Select Supplier to Receive..." oninput="handleDeVendorSearch()" onfocus="showDeVendorDropdown()">
+                        <input type="text" id="de-vendor-search" class="input-modern" placeholder="Select Supplier to Receive..." oninput="handleDeVendorSearch()" onfocus="showDeVendorDropdown()" style="max-width: 100% !important;">
+                        <svg class="scan-icon" viewBox="0 0 24 24" onclick="clearDeVendor()" style="fill: var(--text-muted);"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                         <div id="de-vendor-dropdown" class="autocomplete-dropdown hidden"></div>
                     </div>
                     <div id="de-list"></div>
@@ -730,7 +731,12 @@
             document.getElementById('view-supervisor').classList.remove('hidden'); activeVendor = ''; document.getElementById('vendor-search').value = ''; clearFilters(); onVendorChange();
         } else if(currentUser.role === 'manager') {
             document.getElementById('view-manager').classList.remove('hidden');
-            document.getElementById('manager-date').value = ''; // Force blank to show ALL pending POs by default
+            
+            // Force manager date to Today
+            const today = new Date(); const offset = today.getTimezoneOffset() * 60000;
+            const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
+            document.getElementById('manager-date').value = localISOTime;
+            
             renderManager();
         } else if(currentUser.role === 'data-entry') {
             document.getElementById('view-dataentry').classList.remove('hidden'); activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; renderDataEntry();
@@ -1246,7 +1252,7 @@
     }
     function showDeVendorDropdown() { handleDeVendorSearch(); }
     function selectDeVendor(v) { activeDeVendor = v; document.getElementById('de-vendor-search').value = v; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
-
+    function clearDeVendor() { activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
     function renderDataEntry() {
         const list = document.getElementById('de-list'); list.innerHTML = '';
         if (!activeDeVendor) return list.innerHTML = '<div class="empty-state" style="padding-top:20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">Search a supplier to view their pending deliveries.</p></div>';
@@ -1300,7 +1306,7 @@
             const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
             let extraDataEntryBtn = '';
             if(currentUser.role === 'data-entry' && po.status === 'Received') {
-                extraDataEntryBtn = `<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary);" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
+                extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
             }
             list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
                 <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
@@ -1418,7 +1424,7 @@
             let extraDataEntryBtn = '';
             
             if(currentUser.role === 'data-entry' && po.status === 'Received') {
-                extraDataEntryBtn = `<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary);" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
+                extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
             }
             
             list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
@@ -1486,7 +1492,7 @@
     }
     function showDeVendorDropdown() { handleDeVendorSearch(); }
     function selectDeVendor(v) { activeDeVendor = v; document.getElementById('de-vendor-search').value = v; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
-
+    function clearDeVendor() { activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
     function renderDataEntry() {
         const list = document.getElementById('de-list'); list.innerHTML = '';
         if (!activeDeVendor) return list.innerHTML = '<div class="empty-state" style="padding-top:20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">Search a supplier to view their pending deliveries.</p></div>';
@@ -1539,12 +1545,7 @@
         filtered.forEach((po) => {
             const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
             let extraDataEntryBtn = '';
-            if(currentUser.role === 'data-entry' && po.status === 'Received') {
-                extraDataEntryBtn = `<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary);" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
-            }
-            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
-                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
-                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
+            
         });
     }
 
