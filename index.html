@@ -1122,14 +1122,23 @@
             cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:center;">Qty</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
         }
 
-        
-    
-
-    
-
-    
-
-    
+        const footer = document.getElementById('detail-footer'); footer.innerHTML = '';
+        if (currentUser.role === 'supervisor') {
+            if (po.status === 'Pending') footer.innerHTML = `<button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width:100%;" onclick="editPO('${po.id}', this)">✏️ Edit Order</button>`;
+            else footer.innerHTML = `<button class="btn btn-primary" onclick="pdf('${po.id}')" style="width:100%;">📄 Download PDF</button>`;
+        } else if (currentUser.role === 'manager') {
+            if (po.status === 'Pending') {
+                footer.innerHTML = `
+                    <button class="btn btn-outline" style="flex:1; border-color:var(--primary); color:var(--primary);" onclick="editPO('${po.id}', this)">✏️ Edit</button>
+                    <button class="btn btn-primary" style="flex:2;" onclick="approve('${po.id}', this)">Approve</button>
+                `;
+            } else footer.innerHTML = `<button class="btn btn-outline" style="width:100%;" onclick="pdf('${po.id}')">📄 Download PDF</button>`;
+        } else if (currentUser.role === 'data-entry') {
+            if (po.status === 'Approved') footer.innerHTML = `<button class="btn btn-success" style="width:100%;" onclick="receivePrompt('${po.id}', this, true)">Confirm Receipt</button>`;
+            else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
+        }
+        document.getElementById('view-po-details').classList.add('active');
+    }
 
     function applyManagerFilters() {
         const totalCats = document.querySelectorAll('.mgr-cat-check').length;
@@ -1347,7 +1356,7 @@
             else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
         }
         document.getElementById('view-po-details').classList.add('active');
-    }}
+    }
 
     function closePODetails() { document.getElementById('view-po-details').classList.remove('active'); }
     function applyManagerFilters() {
@@ -1531,21 +1540,34 @@
     }
 
     function renderHistory() {
-        const list = document.getElementById('history-list'); const dateFilter = document.getElementById('history-date').value; list.innerHTML = '';
+        const list = document.getElementById('history-list'); 
+        const dateFilter = document.getElementById('history-date').value; 
+        list.innerHTML = '';
+        
         let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
         
+        // Supervisors only see their own POs. Managers/Data Entry see all for the branch.
         if (currentUser.role === 'supervisor') {
             filtered = filtered.filter(p => p.createdBy === currentUser.username);
         }
         
         if (dateFilter) filtered = filtered.filter(p => p.isoDate === dateFilter);
+        
         document.getElementById('history-total-kpi').innerText = fmt(filtered.reduce((sum, po) => sum + (po.total || 0), 0));
+        
         if(filtered.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No history found for this date.</p></div>';
 
         filtered.forEach((po) => {
             const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
             let extraDataEntryBtn = '';
             
+            if(currentUser.role === 'data-entry' && po.status === 'Received') {
+                extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
+            }
+            
+            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
+                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
+                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
         });
     }
 
