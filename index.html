@@ -339,13 +339,18 @@
                 </div>
 
                 <!-- 1C. DATA ENTRY VIEW -->
-                <div id="view-dataentry" class="hidden section-padded">
-                    <div class="search-box" style="margin-bottom: 16px;">
-                        <input type="text" id="de-vendor-search" class="input-modern" placeholder="Select Supplier to Receive..." oninput="handleDeVendorSearch()" onfocus="showDeVendorDropdown()" style="max-width: 100% !important;">
-                        <svg class="scan-icon" viewBox="0 0 24 24" onclick="clearDeVendor()" style="fill: var(--text-muted);"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                        <div id="de-vendor-dropdown" class="autocomplete-dropdown hidden"></div>
+                <div id="view-dataentry" class="hidden">
+                    <div class="workspace-header glass">
+                        <div class="header-row">
+                            <div class="search-box">
+                                <input type="text" id="de-search" placeholder="Search Vendor or PO#..." oninput="renderDataEntry()">
+                            </div>
+                            <div class="action-group">
+                                <button class="btn btn-outline" id="de-time-toggle" style="width:auto; padding:0 16px; height: 38px; border-radius: 50px;" onclick="toggleDataEntryTime()">14 Days</button>
+                            </div>
+                        </div>
                     </div>
-                    <div id="de-list"></div>
+                    <div id="de-list" class="section-padded" style="padding-top:8px;"></div>
                 </div>
             </div>
 
@@ -665,26 +670,29 @@
 
     function logoutUser() { localStorage.removeItem('mf_ops_user'); location.reload(); }
 
-    async function fetchAllRows(tableName) {
-        let allData = []; let limit = 1000; let start = 0; let hasMore = true;
-        while (hasMore) {
-            const { data, error } = await supabaseClient.from(tableName).select('*').range(start, start + limit - 1);
-            if (error) throw error;
-            if (data.length > 0) { allData = allData.concat(data); start += limit; } else { hasMore = false; }
-        }
-        return allData;
-    }
-
     async function loadDataFromSupabase() {
         const today = new Date(); const offset = today.getTimezoneOffset() * 60000;
         const localISOTime = (new Date(today - offset)).toISOString().split('T')[0];
         document.getElementById('history-date').value = localISOTime;
         
         try {
-            const [resVen, resPos, resSet] = await Promise.all([ fetchAllRows('vendors'), fetchAllRows('purchase_orders'), fetchAllRows('app_settings') ]);
-            vendors = resVen;
-            if(resSet && resSet.length > 0) appSettings = resSet[0];
+            // Managers and Data Entry don't need the Vendors table, making them load instantly.
+            // POs are limited to the user's branch to prevent massive memory usage.
+            let p = [
+                supabaseClient.from('purchase_orders').select('*').in('branch', currentUser.branches).order('created_at', { ascending: false }).limit(2000),
+                supabaseClient.from('app_settings').select('*')
+            ];
+            
+            if (currentUser.role === 'supervisor') p.push(supabaseClient.from('vendors').select('*').in('branch', ['Global', ...currentUser.branches]));
+            
+            const results = await Promise.all(p);
+            const resPos = results[0].data || [];
+            const resSet = results[1].data || [];
+            vendors = currentUser.role === 'supervisor' ? (results[2].data || []) : [];
+            
+            if(resSet.length > 0) appSettings = resSet[0];
             if(!appSettings.auto_approve_categories) appSettings.auto_approve_categories = {};
+            
             pos = resPos.map(p => ({ id: p.po_number, branch: p.branch, supplier: p.supplier, category: p.category, total: p.total_amount, actualAmount: p.actual_amount, status: p.status, items: p.items, isoDate: p.iso_date, receivedDate: p.received_date, createdBy: p.created_by }));
         } catch (err) { 
             showAlert("Error connecting to database. " + err.message); 
@@ -739,7 +747,11 @@
             
             renderManager();
         } else if(currentUser.role === 'data-entry') {
-            document.getElementById('view-dataentry').classList.remove('hidden'); activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; renderDataEntry();
+            document.getElementById('view-dataentry').classList.remove('hidden'); 
+            dataEntryAllTime = false; 
+            document.getElementById('de-time-toggle').innerText = "14 Days";
+            document.getElementById('de-search').value = ''; 
+            renderDataEntry();
         }
         switchTab('tab-workspace', 'Workspace', document.getElementById('nav-workspace'));
     }
@@ -758,8 +770,9 @@
             onVendorChange(); 
         } 
         else if(currentUser.role === 'data-entry') { 
-            activeDeVendor = ''; 
-            document.getElementById('de-vendor-search').value = ''; 
+            dataEntryAllTime = false; 
+            document.getElementById('de-time-toggle').innerText = "14 Days";
+            document.getElementById('de-search').value = ''; 
             renderDataEntry(); 
         } 
         else if(currentUser.role === 'manager') { 
@@ -815,12 +828,7 @@
             supabaseClient.from('unique_brands').select('brand').eq('branch', currentUser.activeBranch)
         ]);
 
-        // Fetch last 14 days of Sales
-        sales = []; let limit = 1000; let start = 0; let hasMore = true;
-        while(hasMore) {
-            const {data} = await supabaseClient.from('sales_data').select('item_code, quantity').eq('branch', currentUser.activeBranch).gte('transaction_date', twoWeeksStr).range(start, start + limit - 1);
-            if(data && data.length > 0) { sales = sales.concat(data); start += limit; } else { hasMore = false; }
-        }
+        
         
         const cSel = document.getElementById('sheet-cat-filter'); 
         const mBox = document.getElementById('manager-category-checkboxes');
@@ -923,10 +931,8 @@
                         }
                     }
                 }
-            } else {
-                // If query is empty, limit to 40 so the app doesn't crash loading the entire DB on boot
-                req = req.limit(40);
             }
+            req = req.limit(200); // Always limit to 200 items for performance
 
             const { data, error } = await req;
             if (error) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--danger);">Error loading items.</div>'; return; }
@@ -936,20 +942,11 @@
 
             if(localInventory.length === 0) return grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No items found.</p></div>';
 
-            // --- SUGGESTION CALCULATION (Last 14 days based on Sales Data) ---
-            const suggestionMap = {};
-            sales.forEach(s => {
-                if (!suggestionMap[s.item_code]) suggestionMap[s.item_code] = 0;
-                suggestionMap[s.item_code] += s.quantity;
-            });
-            // ----------------------------------------------------------------
-
             const cartKey = `${currentUser.activeBranch}_${activeVendor}`;
 
+            // 1. Render UI INSTANTLY with placeholder '--'
             localInventory.forEach(item => {
-                const suggestedQty = suggestionMap[item.item_code] || 0;
                 const inCartItem = (activeVendor && savedCarts[cartKey]) ? savedCarts[cartKey].find(c => c.itemCode === item.item_code) : null;
-                
                 const cardStyle = inCartItem ? 'border: 2px solid var(--primary); background: #f4f8fe;' : 'border: 1px solid var(--border); background: var(--surface-solid);';
                 
                 grid.innerHTML += `
@@ -964,13 +961,26 @@
                         <div style="display:flex; gap:8px; align-items:center;">
                             <div style="flex:1; background:#f8f9fa; border:1px dashed #bdc1c6; border-radius:8px; height:38px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 4px;" title="Past 14 days total sold">
                                 <span style="font-size:9px; font-weight:800; color:var(--text-muted); text-transform:uppercase; line-height:1;">14D SALE</span>
-                                <span style="font-size:13px; font-weight:800; color:var(--primary); line-height:1.2; margin-top:3px;">${suggestedQty > 0 ? Math.round(suggestedQty) : '--'}</span>
+                                <span id="sug-${item.item_code}" style="font-size:13px; font-weight:800; color:var(--primary); line-height:1.2; margin-top:3px;">--</span>
                             </div>
                             <input type="number" id="qty-${item.item_code}" value="1" min="1" style="width:60px; height:38px; border:1px solid var(--border); border-radius:8px; text-align:center; font-size:14px; font-weight:700; background:var(--surface); outline:none; margin:0; padding:0;">
                             <button class="btn btn-primary" style="height:38px; padding:0 20px; font-size:13px; width:auto; margin:0;" onclick="addToCart('${item.item_code}', this)">Add</button>
                         </div>
                     </div>`;
             });
+
+            // 2. Fetch Suggestion Data completely in the background
+            const itemCodes = localInventory.map(i => i.item_code);
+            if (itemCodes.length > 0) {
+                supabaseClient.rpc('get_supervisor_suggestions', { p_branch: currentUser.activeBranch, p_item_codes: itemCodes }).then(({ data: sugData }) => {
+                    if (sugData) {
+                        sugData.forEach(s => {
+                            const el = document.getElementById(`sug-${s.item_code}`);
+                            if (el && s.suggested_qty > 0) el.innerText = Math.round(s.suggested_qty);
+                        });
+                    }
+                });
+            }
         }, 300); // 300ms debounce
     }
 
@@ -1105,40 +1115,7 @@
         } catch (err) { btnElement.disabled = false; btnElement.innerText = "Confirm & Submit PO"; showAlert("Error submitting PO: " + err.message); }
     }
 
-    function openPODetails(poId) {
-        const po = pos.find(p => p.id === poId); if(!po) return;
-        document.getElementById('detail-supplier').innerText = po.supplier;
-        document.getElementById('detail-meta').innerText = `${po.id} • ${po.isoDate ? fmtDate(po.isoDate) : ''} • ${po.branch}`;
-        const statEl = document.getElementById('detail-status'); statEl.innerText = po.status;
-        statEl.style.background = po.status === 'Approved' ? '#e6f4ea' : (po.status === 'Received' ? '#e8f0fe' : '#fce8e6');
-        statEl.style.color = po.status === 'Approved' ? 'var(--success)' : (po.status === 'Received' ? 'var(--primary)' : 'var(--danger)');
-
-        const cont = document.getElementById('detail-items-container');
-        if (currentUser.role === 'manager') {
-            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:right;">${fmt(it.cost)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td><td style="text-align:right; color:var(--primary); font-weight:800;">${fmt(it.cost * it.qty)}</td></tr>`).join('');
-            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:right;">Cost</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Total</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
-        } else {
-            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td></tr>`).join('');
-            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:center;">Qty</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
-        }
-
-        const footer = document.getElementById('detail-footer'); footer.innerHTML = '';
-        if (currentUser.role === 'supervisor') {
-            if (po.status === 'Pending') footer.innerHTML = `<button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width:100%;" onclick="editPO('${po.id}', this)">✏️ Edit Order</button>`;
-            else footer.innerHTML = `<button class="btn btn-primary" onclick="pdf('${po.id}')" style="width:100%;">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'manager') {
-            if (po.status === 'Pending') {
-                footer.innerHTML = `
-                    <button class="btn btn-outline" style="flex:1; border-color:var(--primary); color:var(--primary);" onclick="editPO('${po.id}', this)">✏️ Edit</button>
-                    <button class="btn btn-primary" style="flex:2;" onclick="approve('${po.id}', this)">Approve</button>
-                `;
-            } else footer.innerHTML = `<button class="btn btn-outline" style="width:100%;" onclick="pdf('${po.id}')">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'data-entry') {
-            if (po.status === 'Approved') footer.innerHTML = `<button class="btn btn-success" style="width:100%;" onclick="receivePrompt('${po.id}', this, true)">Confirm Receipt</button>`;
-            else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
-        }
-        document.getElementById('view-po-details').classList.add('active');
-    }
+    
 
     function applyManagerFilters() {
         const totalCats = document.querySelectorAll('.mgr-cat-check').length;
@@ -1251,25 +1228,35 @@
         }).from(htmlContent).save();
     }
 
-    function handleDeVendorSearch() {
-        const query = document.getElementById('de-vendor-search').value.toLowerCase(); const dd = document.getElementById('de-vendor-dropdown'); dd.innerHTML = '';
-        const uniqueSuppliers = [...new Set(pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved').map(p => p.supplier))];
-        const filtered = uniqueSuppliers.filter(v => v.toLowerCase().includes(query));
-        if(filtered.length === 0) dd.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted); cursor:default;">No pending vendors</div>';
-        else filtered.forEach(v => { dd.innerHTML += `<div class="autocomplete-item" onclick="selectDeVendor('${v}')">${v}</div>`; });
-        dd.classList.remove('hidden');
+    let dataEntryAllTime = false;
+    
+    function toggleDataEntryTime() {
+        dataEntryAllTime = !dataEntryAllTime;
+        document.getElementById('de-time-toggle').innerText = dataEntryAllTime ? "All Time" : "14 Days";
+        renderDataEntry();
     }
-    function showDeVendorDropdown() { handleDeVendorSearch(); }
-    function selectDeVendor(v) { activeDeVendor = v; document.getElementById('de-vendor-search').value = v; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
-    function clearDeVendor() { activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
+
     function renderDataEntry() {
         const list = document.getElementById('de-list'); list.innerHTML = '';
-        if (!activeDeVendor) return list.innerHTML = '<div class="empty-state" style="padding-top:20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">Search a supplier to view their pending deliveries.</p></div>';
-        const valid = pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved' && p.supplier === activeDeVendor);
-        if(valid.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No pending deliveries for this supplier.</p></div>';
+        const searchQ = document.getElementById('de-search').value.toLowerCase();
+        
+        let valid = pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved');
+        
+        if (!dataEntryAllTime) {
+            const d = new Date();
+            const twoWeeksStr = new Date(d.getTime() - d.getTimezoneOffset()*60000 - (14*86400000)).toISOString().split('T')[0];
+            valid = valid.filter(p => p.isoDate >= twoWeeksStr);
+        }
+
+        if (searchQ) {
+            valid = valid.filter(p => p.supplier.toLowerCase().includes(searchQ) || p.id.toLowerCase().includes(searchQ));
+        }
+
+        if(valid.length === 0) return list.innerHTML = '<div class="empty-state" style="padding-top:40px;"><p style="color:var(--text-muted); font-size:13px; font-weight:600;">No pending deliveries found.</p></div>';
+        
         valid.forEach((po) => {
             list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
-                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id}</div></div><div class="po-tag tag-approved">Pending</div></div>
+                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag tag-approved">Pending</div></div>
                 <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">Receive →</div></div></div>`;
         });
     }
@@ -1300,63 +1287,44 @@
     }
 
     function renderHistory() {
-        const list = document.getElementById('history-list'); const dateFilter = document.getElementById('history-date').value; list.innerHTML = '';
+        const list = document.getElementById('history-list'); 
+        const dateFilter = document.getElementById('history-date').value; 
+        list.innerHTML = '';
+        
         let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
         
+        // Role-based filtering
         if (currentUser.role === 'supervisor') {
             filtered = filtered.filter(p => p.createdBy === currentUser.username);
+        } else if (currentUser.role === 'data-entry') {
+            // Data Entry should only see Received POs in their history tab
+            filtered = filtered.filter(p => p.status === 'Received');
         }
         
-        if (dateFilter) filtered = filtered.filter(p => p.isoDate === dateFilter);
+        // Date filtering (Use receivedDate for Data Entry, isoDate for others)
+        if (dateFilter) {
+            filtered = filtered.filter(p => currentUser.role === 'data-entry' ? p.receivedDate === dateFilter : p.isoDate === dateFilter);
+        }
+        
         document.getElementById('history-total-kpi').innerText = fmt(filtered.reduce((sum, po) => sum + (po.total || 0), 0));
+        
         if(filtered.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No history found for this date.</p></div>';
 
         filtered.forEach((po) => {
             const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
             let extraDataEntryBtn = '';
+            
             if(currentUser.role === 'data-entry' && po.status === 'Received') {
                 extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
             }
+            
             list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
                 <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
                 <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
         });
     }
 
-    function openPODetails(poId) {
-        const po = pos.find(p => p.id === poId); if(!po) return;
-        document.getElementById('detail-supplier').innerText = po.supplier;
-        document.getElementById('detail-meta').innerText = `${po.id} • ${po.isoDate ? fmtDate(po.isoDate) : ''} • ${po.branch}`;
-        const statEl = document.getElementById('detail-status'); statEl.innerText = po.status;
-        statEl.style.background = po.status === 'Approved' ? '#e6f4ea' : (po.status === 'Received' ? '#e8f0fe' : '#fce8e6');
-        statEl.style.color = po.status === 'Approved' ? 'var(--success)' : (po.status === 'Received' ? 'var(--primary)' : 'var(--danger)');
-
-        const cont = document.getElementById('detail-items-container');
-        if (currentUser.role === 'manager') {
-            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:right;">${fmt(it.cost)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td><td style="text-align:right; color:var(--primary); font-weight:800;">${fmt(it.cost * it.qty)}</td></tr>`).join('');
-            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:right;">Cost</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Total</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
-        } else {
-            let trs = po.items.map(it => `<tr><td>${it.name}</td><td style="text-align:right;">${fmt(it.mrp)}</td><td style="text-align:center; font-weight:800;">${it.qty}</td></tr>`).join('');
-            cont.innerHTML = `<div class="table-wrapper"><table class="styled-table"><thead><tr><th>Item Name</th><th style="text-align:right;">MRP</th><th style="text-align:center;">Qty</th></tr></thead><tbody>${trs}</tbody></table></div><div style="text-align:right; margin-top:16px; font-weight:800; font-size:16px;">Grand Total: <span style="color:var(--primary);">${fmt(po.total)}</span></div>`;
-        }
-
-        const footer = document.getElementById('detail-footer'); footer.innerHTML = '';
-        if (currentUser.role === 'supervisor') {
-            if (po.status === 'Pending') footer.innerHTML = `<button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width:100%;" onclick="editPO('${po.id}', this)">✏️ Edit Order</button>`;
-            else footer.innerHTML = `<button class="btn btn-primary" onclick="pdf('${po.id}')" style="width:100%;">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'manager') {
-            if (po.status === 'Pending') {
-                footer.innerHTML = `
-                    <button class="btn btn-outline" style="flex:1; border-color:var(--primary); color:var(--primary);" onclick="editPO('${po.id}', this)">✏️ Edit</button>
-                    <button class="btn btn-primary" style="flex:2;" onclick="approve('${po.id}', this)">Approve</button>
-                `;
-            } else footer.innerHTML = `<button class="btn btn-outline" style="width:100%;" onclick="pdf('${po.id}')">📄 Download PDF</button>`;
-        } else if (currentUser.role === 'data-entry') {
-            if (po.status === 'Approved') footer.innerHTML = `<button class="btn btn-success" style="width:100%;" onclick="receivePrompt('${po.id}', this, true)">Confirm Receipt</button>`;
-            else if (po.status === 'Received') footer.innerHTML = `<div style="color:var(--success); font-weight:800; font-size:15px; width:100%; text-align:center;">✓ Received (${fmt(po.actualAmount)})</div>`;
-        }
-        document.getElementById('view-po-details').classList.add('active');
-    }
+    
 
     function closePODetails() { document.getElementById('view-po-details').classList.remove('active'); }
     function applyManagerFilters() {
@@ -1410,37 +1378,7 @@
         });
     }
 
-    function renderHistory() {
-        const list = document.getElementById('history-list'); 
-        const dateFilter = document.getElementById('history-date').value; 
-        list.innerHTML = '';
-        
-        let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
-        
-        // Supervisors only see their own POs. Managers/Data Entry see all for the branch.
-        if (currentUser.role === 'supervisor') {
-            filtered = filtered.filter(p => p.createdBy === currentUser.username);
-        }
-        
-        if (dateFilter) filtered = filtered.filter(p => p.isoDate === dateFilter);
-        
-        document.getElementById('history-total-kpi').innerText = fmt(filtered.reduce((sum, po) => sum + (po.total || 0), 0));
-        
-        if(filtered.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No history found for this date.</p></div>';
-
-        filtered.forEach((po) => {
-            const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
-            let extraDataEntryBtn = '';
-            
-            if(currentUser.role === 'data-entry' && po.status === 'Received') {
-                extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
-            }
-            
-            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
-                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
-                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
-        });
-    }
+    
 
     function pdf(poId) {
         const po = pos.find(p => p.id === poId); if(!po) return;
@@ -1491,28 +1429,7 @@
         }).from(htmlContent).save();
     }
 
-    function handleDeVendorSearch() {
-        const query = document.getElementById('de-vendor-search').value.toLowerCase(); const dd = document.getElementById('de-vendor-dropdown'); dd.innerHTML = '';
-        const uniqueSuppliers = [...new Set(pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved').map(p => p.supplier))];
-        const filtered = uniqueSuppliers.filter(v => v.toLowerCase().includes(query));
-        if(filtered.length === 0) dd.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted); cursor:default;">No pending vendors</div>';
-        else filtered.forEach(v => { dd.innerHTML += `<div class="autocomplete-item" onclick="selectDeVendor('${v}')">${v}</div>`; });
-        dd.classList.remove('hidden');
-    }
-    function showDeVendorDropdown() { handleDeVendorSearch(); }
-    function selectDeVendor(v) { activeDeVendor = v; document.getElementById('de-vendor-search').value = v; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
-    function clearDeVendor() { activeDeVendor = ''; document.getElementById('de-vendor-search').value = ''; document.getElementById('de-vendor-dropdown').classList.add('hidden'); renderDataEntry(); }
-    function renderDataEntry() {
-        const list = document.getElementById('de-list'); list.innerHTML = '';
-        if (!activeDeVendor) return list.innerHTML = '<div class="empty-state" style="padding-top:20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">Search a supplier to view their pending deliveries.</p></div>';
-        const valid = pos.filter(p => p.branch === currentUser.activeBranch && p.status === 'Approved' && p.supplier === activeDeVendor);
-        if(valid.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No pending deliveries for this supplier.</p></div>';
-        valid.forEach((po) => {
-            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
-                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id}</div></div><div class="po-tag tag-approved">Pending</div></div>
-                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">Receive →</div></div></div>`;
-        });
-    }
+    
 
     function receivePrompt(poId, btnElement, isFromDetailsPage) {
         const po = pos.find(p => p.id === poId);
@@ -1539,37 +1456,7 @@
         });
     }
 
-    function renderHistory() {
-        const list = document.getElementById('history-list'); 
-        const dateFilter = document.getElementById('history-date').value; 
-        list.innerHTML = '';
-        
-        let filtered = pos.filter(p => p.branch === currentUser.activeBranch);
-        
-        // Supervisors only see their own POs. Managers/Data Entry see all for the branch.
-        if (currentUser.role === 'supervisor') {
-            filtered = filtered.filter(p => p.createdBy === currentUser.username);
-        }
-        
-        if (dateFilter) filtered = filtered.filter(p => p.isoDate === dateFilter);
-        
-        document.getElementById('history-total-kpi').innerText = fmt(filtered.reduce((sum, po) => sum + (po.total || 0), 0));
-        
-        if(filtered.length === 0) return list.innerHTML = '<div style="text-align:center; padding:40px 20px;"><p style="color:var(--text-muted); font-size:12px; font-weight:600;">No history found for this date.</p></div>';
-
-        filtered.forEach((po) => {
-            const tagClass = po.status === 'Approved' ? 'tag-approved' : (po.status === 'Received' ? 'tag-received' : '');
-            let extraDataEntryBtn = '';
-            
-            if(currentUser.role === 'data-entry' && po.status === 'Received') {
-                extraDataEntryBtn = `<div style="grid-column: 1 / -1; width: 100%; margin-top: 4px; border-top: 1px solid #f1f3f4; padding-top: 12px;"><button class="btn btn-outline" style="border-color:var(--primary); color:var(--primary); width: 100%; max-width: 250px;" onclick="event.stopPropagation(); editReceivedAmount('${po.id}')">✏️ Edit Amount</button></div>`;
-            }
-            
-            list.innerHTML += `<div class="card po-row" onclick="openPODetails('${po.id}')">
-                <div class="po-header po-header-row"><div class="po-info"><div class="po-title">${po.supplier}</div><div class="po-meta">${po.id} • ${fmtDate(po.isoDate)}</div></div><div class="po-tag ${tagClass}">${po.status}</div></div>
-                <div class="po-footer-row"><div class="po-amt">${fmt(po.total)}</div><div class="po-action">View Details →</div></div>${extraDataEntryBtn}</div>`;
-        });
-    }
+    
 
     function openPODetails(poId) {
         const po = pos.find(p => p.id === poId); if(!po) return;
