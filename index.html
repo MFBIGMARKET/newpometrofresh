@@ -1072,14 +1072,24 @@
         if (!poNumber) {
             const catName = cartData[0].category || "XX";
             const prefix = "PO" + catName.substring(0, 2).toUpperCase() + "-";
-            let maxNum = 999;
-            pos.forEach(p => {
-                if (p.id && p.id.startsWith(prefix)) {
-                    const numPart = parseInt(p.id.replace(prefix, ''), 10);
-                    if (!isNaN(numPart) && numPart > maxNum) maxNum = numPart;
+            
+            // Get absolute highest number direct from DB to prevent collisions if multiple users submit at once
+            const { data: latestPo } = await supabaseClient
+                .from('purchase_orders')
+                .select('po_number')
+                .ilike('po_number', `${prefix}%`)
+                .order('po_number', { ascending: false })
+                .limit(1);
+
+            let nextNum = 1000;
+            if (latestPo && latestPo.length > 0 && latestPo[0].po_number) {
+                const parts = latestPo[0].po_number.split('-');
+                if (parts.length > 1) {
+                    const lastNum = parseInt(parts[1], 10);
+                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
                 }
-            });
-            poNumber = prefix + (maxNum + 1);
+            }
+            poNumber = prefix + nextNum;
         }
 
         const totalAmt = cartData.reduce((sum, i) => sum + (i.cost * i.qty), 0);
